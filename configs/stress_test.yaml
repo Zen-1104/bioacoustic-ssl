@@ -1,0 +1,11 @@
+dataset:
+  birdclef_dir: "data/raw/birdclef"
+  esc50_dir: "data/raw/esc50"
+  sample_rate: 16000
+  clip_sec: 10
+
+evaluation:
+  batch_size: 16
+  num_workers: 4
+  # Keep aligned with the paper plan: clean plus +20 dB through -5 dB
+  snr_levels: [null, 20, 15, 10, 5, 0, -5]

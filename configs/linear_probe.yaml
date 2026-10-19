@@ -1,0 +1,16 @@
+dataset:
+  sample_rate: 16000
+  clip_sec: 10
+  birdclef_dir: "data/raw/birdclef"
+
+experiment:
+  data_fractions: [0.01, 0.05, 0.10, 1.00]
+  batch_size: 16
+  learning_rate: 0.001
+  epochs: 20
+  num_workers: 4
+  seed: 42
+
+checkpoint:
+  # Exp2 receives the particular checkpoint through --checkpoint.
+  moco_backbone_path: "checkpoints/moco_habitat_s42.pt"

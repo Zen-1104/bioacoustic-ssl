@@ -1,0 +1,19 @@
+dataset:
+  birdclef_dir: "data/raw/birdclef"
+  esc50_dir: "data/raw/esc50"
+  sample_rate: 16000
+  clip_sec: 10
+
+noise_augmentation:
+  seen_habitat_csv: "data/processed/esc50_seen_habitat.csv"
+  snr_db_range: [-5, 20]
+  probability: 0.5
+
+experiment:
+  data_fractions: [0.01, 0.05, 0.10, 1.00]
+  batch_size: 16
+  learning_rate: 0.001
+  supervised_lr: 0.0003
+  epochs: 20
+  num_workers: 4
+  seed: 42

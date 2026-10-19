@@ -1,0 +1,13 @@
+dataset:
+  birdclef_dir: "data/raw/birdclef"
+  sample_rate: 16000
+  clip_sec: 10
+
+experiment:
+  data_fractions: [0.01, 0.05, 0.10, 1.00]
+  batch_size: 16
+  learning_rate: 0.001
+  supervised_lr: 0.0003
+  epochs: 20
+  num_workers: 4
+  seed: 42
