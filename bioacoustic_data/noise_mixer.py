@@ -95,10 +95,10 @@ class NoiseMixer:
         p_noise = noise_wave.square().mean(dim = -1, keepdim = True)
 
         if torch.any(p_clean <= self.power_epsilon):
-            raise ValueError("Clean waveform is silent or near silent; refusing to compute an SNR mixture.")
+            raise ValueError("Clean waveform is silent or near-silent; refusing to compute an SNR mixture.")
         
         if torch.any(p_noise <= self.power_epsilon):
-            raise ValueError("Noise waveform is silent or near silent; refusing to substitute clean audio.")
+            raise ValueError("Noise waveform is silent or near-silent; refusing to substitute clean audio.")
 
         snr_linear = 10.0 ** (float(snr_db) / 10.0)
         alpha = torch.sqrt(p_clean / (snr_linear * p_noise))

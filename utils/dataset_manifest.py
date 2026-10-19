@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
+from pathlib import Path
 
 
 def fingerprint_paths_labels(relative_paths: Sequence[str], labels: Sequence[int]) -> str:
@@ -14,64 +15,100 @@ def fingerprint_paths_labels(relative_paths: Sequence[str], labels: Sequence[int
     """
     if len(relative_paths) != len(labels):
         raise ValueError(f"Path/label length mismatch: {len(relative_paths)} paths vs {len(labels)} labels.")
-        
+
     payload = "\n".join(f"{path}\t{int(label)}" for path, label in zip(relative_paths, labels)).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
 def fingerprint_relative_paths(relative_paths: Sequence[str]) -> str:
     """Fingerprint a sorted path index, independent of filesystem enumeration order."""
-    
+
     normalized = [str(path).replace("\\", "/") for path in relative_paths]
-    
+
     if any(not path for path in normalized):
         raise ValueError("Relative path index contains an empty path.")
-        
+
     if len(normalized) != len(set(normalized)):
         raise ValueError("Relative path index contains duplicate paths.")
-        
+
     payload = "\n".join(sorted(normalized, key = lambda value: (value.casefold(), value))).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+def fingerprint_file_inventory(root: str | Path, relative_paths: Sequence[str]) -> str:
+    """Fingerprint sorted relative paths, byte sizes, and nanosecond mtimes.
+
+    This cheaply detects inventory changes and ordinary source-file replacements.
+    It is not a byte-for-byte content digest.    """
+
+    base = Path(root).expanduser().resolve()
+    normalized = [str(path).replace("\\", "/") for path in relative_paths]
+
+    if any(not path for path in normalized):
+        raise ValueError("Relative path inventory contains an empty path.")
+
+    if len(normalized) != len(set(normalized)):
+        raise ValueError("Relative path inventory contains duplicate paths.")
+
+    rows = []
+    for relative in sorted(normalized, key = lambda value: (value.casefold(), value)):
+        relative_path = Path(relative)
+
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            raise ValueError(f"Expected a relative source path, got {relative!r}.")
+
+        source = base / relative_path
+        try:
+            stat = source.stat()
+        except OSError as exc:
+            raise FileNotFoundError(f"Cannot stat source audio file '{source}'.") from exc
+
+        if not source.is_file():
+            raise FileNotFoundError(f"Source audio file is missing: '{source}'.")
+
+        rows.append(f"{relative}\t{stat.st_size}\t{stat.st_mtime_ns}")
+
+    payload = "\n".join(rows).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
 def validate_manifest_file_index(manifest: dict, relative_paths: Sequence[str], labels: Sequence[int], *, context: str) -> None:
     """Fail if a split manifest was built for a different index or has split leakage."""
-    
+
     if len(relative_paths) != len(set(relative_paths)):
         raise ValueError(f"{context}: dataset index contains duplicate relative filenames.")
 
     split_names = {}
     for field in ("train_filenames", "validation_filenames", "test_filenames"):
         names = manifest.get(field)
-        
+
         if not isinstance(names, list) or not names:
             raise ValueError(f"{context}: manifest field '{field}' must be a non empty filename list.")
-            
+
         if any(not isinstance(name, str) or not name for name in names):
             raise ValueError(f"{context}: manifest field '{field}' contains an invalid filename.")
-            
+
         if len(names) != len(set(names)):
             raise ValueError(f"{context}: manifest field '{field}' contains duplicate filenames.")
-            
+
         split_names[field] = set(names)
 
     train = split_names["train_filenames"]
     validation = split_names["validation_filenames"]
     test = split_names["test_filenames"]
-    
+
     if train & validation or train & test or validation & test:
         raise ValueError(f"{context}: train/validation/test filenames overlap.")
 
     expected = set(relative_paths)
     excluded_names = manifest.get("excluded_filenames", [])
-    
+
     if not isinstance(excluded_names, list) or any(not isinstance(name, str) or not name for name in excluded_names):
         raise ValueError(f"{context}: excluded_filenames must be a list of relative filenames.")
-        
+
     excluded = set(excluded_names)
     if len(excluded_names) != len(excluded) or excluded & (train | validation | test):
         raise ValueError(f"{context}: excluded_filenames contain duplicates or overlap active splits.")
-        
+
     declared = train | validation | test | excluded
     if expected != declared:
         missing = sorted(expected - declared)[:5]
@@ -85,12 +122,12 @@ def validate_manifest_file_index(manifest: dict, relative_paths: Sequence[str], 
 
     all_names = set(expected)
     for fraction_key, fraction_names in manifest.get("train_fraction_filenames", {}).items():
-    
+
         if not isinstance(fraction_names, list) or not fraction_names:
             raise ValueError(f"{context}: fraction '{fraction_key}' must have a non empty filename list.")
-            
+
         if len(fraction_names) != len(set(fraction_names)):
             raise ValueError(f"{context}: fraction '{fraction_key}' contains duplicate filenames.")
-            
+
         if not set(fraction_names).issubset(train) or not set(fraction_names).issubset(all_names):
             raise ValueError(f"{context}: fraction '{fraction_key}' contains filenames outside the training split.")

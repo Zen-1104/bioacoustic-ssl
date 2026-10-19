@@ -71,13 +71,13 @@ def threshold_failures(
     if read_error_fraction > max_read_error_fraction:
         failures.append(
             f"read/decode-error fraction {read_error_fraction:.2%} exceeds "
-            f"--max-read-error-fraction = {max_read_error_fraction:.2%}"
+            f"--max-read-error-fraction={max_read_error_fraction:.2%}"
         )
         
     if excluded_fraction > max_excluded_fraction:
         failures.append(
             f"total exclusion fraction {excluded_fraction:.2%} exceeds "
-            f"--max-excluded-fraction = {max_excluded_fraction:.2%}"
+            f"--max-excluded-fraction={max_excluded_fraction:.2%}"
         )
         
     return failures

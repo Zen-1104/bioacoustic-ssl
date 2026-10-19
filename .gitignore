@@ -1,23 +1,14 @@
-# macOS
 .DS_Store
-
-# Python
 __pycache__/
 *.py[cod]
 venv/
 .venv/
-
-# Secrets and local environment
 .env
 .env.*
 !.env.example
-
-# Temporary files and logs
 *.tmp
 *.log
 logs/
-
-# Raw datasets, caches, and downloaded model files
 data/raw/
 data/processed/xeno_canto_cache/
 data/pretrained/
@@ -33,14 +24,12 @@ data/pretrained/
 *.ckpt
 *.safetensors
 *.zip
-
-# Generated evaluation outputs; retain Python utilities
 results/*.csv
 results/*.json
 results/*.jsonl
 results/*.png
 results/*.pdf
 results/*.log
-
-# Local backup files
 *.bak
+results/*.pt
+results/*.pth

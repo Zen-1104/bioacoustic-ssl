@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Submit preflight, pretraining, probing, stress evaluation and aggregation as dependent SLURM stages.
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 if ! command -v sbatch >/dev/null 2>&1; then

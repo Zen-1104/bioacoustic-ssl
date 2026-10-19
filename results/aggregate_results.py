@@ -59,7 +59,7 @@ def _metric_value(raw, path, context):
     if skipped_count:
         raise ValueError(
             f"Result {path} ({context}) contains {skipped_count} skipped noise mixes that were evaluated as clean fallback. "
-            "These are not valid samples of the requested noisy SNR condition; rebuild BirdCLEF preflight/splits and rerun Exp3 before aggregation."
+            "These are not valid samples of the requested noisy-SNR condition; rebuild BirdCLEF preflight/splits and rerun Exp3 before aggregation."
         )
         
     if not np.isfinite(acc) or not 0 <= acc <= 1 or n != len(pred) or n < 1:
@@ -95,7 +95,10 @@ def load_all_seed_results(results_dir = "results", expected_seeds = DEFAULT_SEED
         
         meta = data.get("metadata", {})
         if meta.get("schema_version") != 5 or "seed" not in meta or "fraction" not in meta:
-            raise ValueError(f"Legacy/incomplete Exp3 schema in '{path}'. Back up old results and rerun Exp3.")
+            raise ValueError(
+                f"Legacy/incomplete Exp3 schema (expected schema v5) in '{path}'. "
+                "Back up old results and rerun Exp3."
+            )
             
         result_fraction = float(meta["fraction"])
         if not 0.0 < result_fraction <= 1.0:

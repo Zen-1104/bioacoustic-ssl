@@ -136,7 +136,7 @@ def load_external_records(results_dir: str | Path, *, seeds = DEFAULT_SEEDS, fra
                     reference_crop_policy = crop_policy
                     
                 elif crop_policy != reference_crop_policy:
-                    raise ValueError("External baseline outputs use different fixed crop policies/spec versions; rerun them with matched settings.")
+                    raise ValueError("External baseline outputs use different fixed-crop policies/spec versions; rerun them with matched settings.")
                     
                 key = (model, int(seed), float(fraction))
                 if key in records:

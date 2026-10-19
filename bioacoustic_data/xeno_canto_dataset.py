@@ -10,7 +10,7 @@ import torch
 from torch.utils.data import Dataset
 
 from utils.audio_io import load_and_preprocess_audio, log_mel_spectrogram
-from utils.dataset_manifest import fingerprint_relative_paths
+from utils.dataset_manifest import fingerprint_relative_paths, fingerprint_file_inventory
 from bioacoustic_data.augmentations import SpecAugment
 
 _AUDIO_EXTS = (".wav", ".mp3", ".flac", ".ogg")
@@ -73,6 +73,7 @@ class XenoCantoDataset(Dataset):
         all_files.sort(key = lambda pair: (pair[1].casefold(), pair[1]))
         all_relative_paths = [rel for _, rel in all_files]
         current_path_hash = fingerprint_relative_paths(all_relative_paths)
+        current_inventory_hash = fingerprint_file_inventory(root, all_relative_paths)
 
         if audit_data is not None and audit_data.get("xeno_canto_paths_sha256") != current_path_hash:
             raise RuntimeError(
@@ -94,8 +95,16 @@ class XenoCantoDataset(Dataset):
             else:
                 preflight_data = json.loads(pf_path.read_text(encoding = "utf-8"))
 
-                if preflight_data.get("audio_paths_sha256") != current_path_hash:
-                    raise RuntimeError("Xeno-Canto preflight manifest does not match the current audio file index; rerun preflight.")
+                if preflight_data.get("schema_version") != 3:
+                    raise RuntimeError(
+                        "Xeno-Canto preflight manifest schema is outdated; "
+                        "rebuild it with scripts/preflight_xeno_audio.py --overwrite."
+                    )
+
+                if preflight_data.get("audio_inventory_sha256") != current_inventory_hash:
+                    raise RuntimeError("Xeno-Canto source inventory (relative paths, byte sizes, and modification times) "
+                                       "differs from the preflight manifest; rerun preflight."
+                                    )
                 
                 if int(preflight_data.get("sample_rate", -1)) != int(sample_rate):
                     raise RuntimeError("Xeno-Canto cache sample rate differs from the requested sample rate.")
