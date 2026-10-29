@@ -24,15 +24,22 @@ DEFAULT_OUT = Path(
 def load_archive(path: Path) -> dict[str, np.ndarray]:
     if not path.is_file():
         raise FileNotFoundError(f"Prediction archive not found: {path}")
+    
     with np.load(path, allow_pickle=False) as archive:
         required = {
-            "targets", "file_names", "segment_start_seconds",
-            "segment_types", "class_names",
-            "scores_habitat", "scores_standard",
+            "targets", 
+            "file_names", 
+            "segment_start_seconds",
+            "segment_types", 
+            "class_names",
+            "scores_habitat", 
+            "scores_standard",
         }
+
         missing = required.difference(archive.files)
         if missing:
             raise ValueError(f"{path} is missing arrays: {sorted(missing)}")
+        
         return {key: archive[key].copy() for key in required}
 
 
@@ -40,9 +47,13 @@ def validate_archives(data: dict[int, dict[str, np.ndarray]]) -> None:
     reference = data[43]
     for seed in (43, 44):
         item = data[seed]
+
         for key in (
-            "targets", "file_names", "segment_start_seconds",
-            "segment_types", "class_names",
+            "targets", 
+            "file_names", 
+            "segment_start_seconds",
+            "segment_types", 
+            "class_names",
         ):
             if not np.array_equal(reference[key], item[key]):
                 raise ValueError(
@@ -52,11 +63,13 @@ def validate_archives(data: dict[int, dict[str, np.ndarray]]) -> None:
         targets = item["targets"]
         for score_key in ("scores_habitat", "scores_standard"):
             scores = item[score_key]
+
             if scores.shape != targets.shape:
                 raise ValueError(
                     f"Seed {seed}: {score_key} shape {scores.shape} "
                     f"does not match targets {targets.shape}."
                 )
+            
             if not np.isfinite(scores).all():
                 raise ValueError(f"Seed {seed}: non-finite values in {score_key}.")
 
@@ -64,11 +77,13 @@ def validate_archives(data: dict[int, dict[str, np.ndarray]]) -> None:
 def ap_pair(
     targets: np.ndarray, scores: np.ndarray
 ) -> tuple[float, float]:
-    """Match the evaluator's class-filtered macro and micro AP definitions."""
+    """Match the evaluator's class filtered macro and micro AP definitions."""
+
     valid = [
         i for i in range(targets.shape[1])
         if np.unique(targets[:, i]).size == 2
     ]
+
     if not valid:
         raise ValueError("No class has both positive and negative targets.")
 
@@ -76,36 +91,41 @@ def ap_pair(
         average_precision_score(targets[:, i], scores[:, i])
         for i in valid
     ]))
+
     micro = float(average_precision_score(
         targets[:, valid].reshape(-1),
         scores[:, valid].reshape(-1),
     ))
+
     return macro, micro
 
 
 def make_recording_groups(file_names: np.ndarray) -> tuple[np.ndarray, list[np.ndarray]]:
     unique_names, inverse = np.unique(file_names, return_inverse=True)
-    order = np.argsort(inverse, kind="stable")
+    order = np.argsort(inverse, kind = "stable")
     counts = np.bincount(inverse)
     offsets = np.concatenate(([0], np.cumsum(counts)))
+
     groups = [
         order[offsets[i]:offsets[i + 1]]
         for i in range(len(unique_names))
     ]
+
     return unique_names, groups
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Paired recording-cluster bootstrap for real soundscapes."
+        description = "Paired recording-cluster bootstrap for real soundscapes."
     )
-    parser.add_argument("--replicates", type=int, default=1000)
-    parser.add_argument("--random-seed", type=int, default=20261025)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUT)
+    parser.add_argument("--replicates", type = int, default = 1000)
+    parser.add_argument("--random-seed", type = int, default = 20261025)
+    parser.add_argument("--output-dir", type = Path, default = DEFAULT_OUT)
     args = parser.parse_args()
 
     if args.replicates < 50:
         raise ValueError("--replicates must be at least 50.")
+    
     if args.output_dir.exists():
         raise FileExistsError(
             f"Output directory already exists: {args.output_dir}. "
@@ -127,11 +147,11 @@ def main() -> None:
     seed_points: dict[int, dict[str, dict[str, float]]] = {}
     point_deltas: dict[int, dict[str, float]] = {}
 
-    print(f"Segments: {len(targets)}", flush=True)
-    print(f"Classes: {targets.shape[1]}", flush=True)
-    print(f"Recording clusters: {n_recordings}", flush=True)
-    print(f"Bootstrap replicates: {args.replicates}", flush=True)
-    print("Computing point estimates...", flush=True)
+    print(f"Segments: {len(targets)}", flush = True)
+    print(f"Classes: {targets.shape[1]}", flush = True)
+    print(f"Recording clusters: {n_recordings}", flush = True)
+    print(f"Bootstrap replicates: {args.replicates}", flush = True)
+    print("Computing point estimates...", flush = True)
 
     for seed in (43, 44):
         item = data[seed]
@@ -176,7 +196,7 @@ def main() -> None:
 
     print(
         "Starting paired bootstrap. Progress prints every 50 valid replicates.",
-        flush=True,
+        flush = True,
     )
 
     while accepted < args.replicates:
@@ -188,7 +208,7 @@ def main() -> None:
             )
 
         # One shared recording sample is used for both models and both seeds.
-        sampled_groups = rng.integers(0, n_recordings, size=n_recordings)
+        sampled_groups = rng.integers(0, n_recordings, size = n_recordings)
         sampled_indices = np.concatenate([groups[i] for i in sampled_groups])
         sampled_targets = targets[sampled_indices]
 
@@ -214,6 +234,7 @@ def main() -> None:
         for metric in metrics:
             d43 = replicate_deltas[43][metric]
             d44 = replicate_deltas[44][metric]
+
             boot[metric][43].append(d43)
             boot[metric][44].append(d44)
             boot[metric]["mean_across_seeds"].append((d43 + d44) / 2.0)
@@ -227,21 +248,24 @@ def main() -> None:
             )
 
     output_dir = args.output_dir
-    output_dir.mkdir(parents=True, exist_ok=False)
+    output_dir.mkdir(parents = True, exist_ok = False)
 
     summary_rows = []
     for metric in metrics:
         for analysis in (43, 44, "mean_across_seeds"):
-            values = np.asarray(boot[metric][analysis], dtype=float)
+            values = np.asarray(boot[metric][analysis], dtype = float)
+
             if analysis == "mean_across_seeds":
                 point = (
                     point_deltas[43][metric] + point_deltas[44][metric]
                 ) / 2.0
+
                 standard_point = (
                     seed_points[43]["standard"][metric]
                     + seed_points[44]["standard"][metric]
                 ) / 2.0
                 analysis_name = "mean_across_seeds"
+
             else:
                 point = point_deltas[analysis][metric]
                 standard_point = seed_points[analysis]["standard"][metric]
@@ -269,14 +293,15 @@ def main() -> None:
             })
 
     summary_csv = output_dir / "paired_recording_cluster_bootstrap.csv"
-    with summary_csv.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(summary_rows[0].keys()))
+    with summary_csv.open("w", newline = "", encoding = "utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames = list(summary_rows[0].keys()))
         writer.writeheader()
         writer.writerows(summary_rows)
 
     replicate_csv = output_dir / "paired_recording_cluster_bootstrap_replicates.csv"
-    with replicate_csv.open("w", newline="", encoding="utf-8") as f:
+    with replicate_csv.open("w", newline = "", encoding = "utf-8") as f:
         fields = ["replicate"]
+
         for metric in metrics:
             short = "macro" if metric.startswith("macro") else "micro"
             fields += [
@@ -284,8 +309,10 @@ def main() -> None:
                 f"seed44_{short}_delta",
                 f"mean_{short}_delta_across_seeds",
             ]
-        writer = csv.DictWriter(f, fieldnames=fields)
+
+        writer = csv.DictWriter(f, fieldnames = fields)
         writer.writeheader()
+        
         for i in range(args.replicates):
             row = {"replicate": i + 1}
             for metric in metrics:
@@ -320,13 +347,14 @@ def main() -> None:
         ),
         "source_archives": {str(k): str(v) for k, v in ARCHIVES.items()},
     }
+
     json_path = output_dir / "paired_recording_cluster_bootstrap.json"
     json_path.write_text(
-        json.dumps(report, indent=2, allow_nan=False) + "\n",
-        encoding="utf-8",
+        json.dumps(report, indent = 2, allow_nan = False) + "\n",
+        encoding = "utf-8",
     )
 
-    print("\nPAIRED BOOTSTRAP RESULTS", flush=True)
+    print("\nPAIRED BOOTSTRAP RESULTS", flush = True)
     for row in summary_rows:
         print(
             f"{row['analysis']} | {row['metric']} | "
@@ -335,13 +363,13 @@ def main() -> None:
             f"{row['paired_bootstrap_ci95_high']:+.8f}] | "
             f"relative improvement="
             f"{row['relative_improvement_percent_vs_standard']:.2f}%",
-            flush=True,
+            flush = True,
         )
 
-    print("\nSaved outputs:", flush=True)
-    print(summary_csv, flush=True)
-    print(replicate_csv, flush=True)
-    print(json_path, flush=True)
+    print("\nSaved outputs:", flush = True)
+    print(summary_csv, flush = True)
+    print(replicate_csv, flush = True)
+    print(json_path, flush = True)
 
 
 if __name__ == "__main__":

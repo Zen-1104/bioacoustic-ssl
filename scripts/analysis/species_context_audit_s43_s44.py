@@ -29,22 +29,29 @@ def load_archive(path: Path):
         raise FileNotFoundError(f"Missing prediction archive: {path}")
     with np.load(path, allow_pickle=False) as archive:
         required = [
-            "targets", "file_names", "segment_start_seconds",
-            "segment_types", "class_names",
-            "scores_habitat", "scores_standard",
+            "targets", 
+            "file_names", 
+            "segment_start_seconds",
+            "segment_types", 
+            "class_names",
+            "scores_habitat", 
+            "scores_standard",
         ]
+
         missing = set(required) - set(archive.files)
         if missing:
             raise ValueError(f"{path} missing arrays: {sorted(missing)}")
+        
         return {key: archive[key].copy() for key in required}
 
 
 def write_csv(path: Path, rows: list[dict]):
     if not rows:
-        path.write_text("", encoding="utf-8")
+        path.write_text("", encoding = "utf-8")
         return
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+    
+    with path.open("w", newline = "", encoding = "utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames = list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
 
@@ -55,7 +62,7 @@ def build_audio_index():
         print(
             f"NOTICE: Audio root not found: {AUDIO_ROOT}. "
             "The report will still include recording names and timestamps.",
-            flush=True,
+            flush = True,
         )
         return index
 
@@ -70,12 +77,15 @@ def build_audio_index():
 def find_audio(name: str, audio_index: dict[str, list[Path]]) -> str:
     p = Path(name)
     candidates = [p.name.lower(), p.stem.lower()]
+
     matches = []
     for key in candidates:
         matches.extend(audio_index.get(key, []))
+
     unique = list(dict.fromkeys(matches))
     if len(unique) == 1:
         return str(unique[0].resolve())
+    
     return ""
 
 
@@ -88,9 +98,13 @@ def main():
 
     # Verify row alignment before comparing models or seeds.
     shared_fields = [
-        "targets", "file_names", "segment_start_seconds",
-        "segment_types", "class_names",
+        "targets", 
+        "file_names", 
+        "segment_start_seconds",
+        "segment_types", 
+        "class_names",
     ]
+
     for seed in (43, 44):
         item = data[seed]
         for field in shared_fields:
@@ -98,10 +112,12 @@ def main():
                 raise ValueError(
                     f"Archives differ in {field!r}; comparison is unsafe."
                 )
+            
         for model in ("habitat", "standard"):
             scores = item[f"scores_{model}"]
             if scores.shape != item["targets"].shape:
                 raise ValueError(f"Score shape mismatch: seed {seed}, {model}")
+            
             if not np.isfinite(scores).all():
                 raise ValueError(f"Non-finite score: seed {seed}, {model}")
 

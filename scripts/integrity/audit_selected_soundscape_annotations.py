@@ -25,6 +25,7 @@ def choose(columns, aliases, required=True):
     for alias in aliases:
         if norm(alias) in lookup:
             return lookup[norm(alias)]
+        
     if required:
         raise ValueError(
             f"Cannot identify a required field among {aliases}. "
@@ -34,7 +35,7 @@ def choose(columns, aliases, required=True):
 
 def overlaps(frame, start, end):
     normal = (frame["_start"] < end) & (frame["_end"] > start)
-    # Also handle any zero-duration annotation rows.
+    # Also handle any zero duration annotation rows.
     points = (
         (frame["_start"] == frame["_end"])
         & (frame["_start"] >= start)
@@ -68,13 +69,13 @@ def main():
     df["_row"] = range(2, len(df) + 2)
     df["_filename"] = (
         df[filename_col].astype(str)
-        .str.replace("\\", "/", regex=False)
+        .str.replace("\\", "/", regex = False)
         .str.strip()
         .map(lambda x: Path(x).name.lower())
     )
     df["_species"] = df[species_col].astype(str).str.strip().str.lower()
-    df["_start"] = pd.to_numeric(df[start_col], errors="coerce")
-    df["_end"] = pd.to_numeric(df[end_col], errors="coerce")
+    df["_start"] = pd.to_numeric(df[start_col], errors = "coerce")
+    df["_end"] = pd.to_numeric(df[end_col], errors = "coerce")
     df = df.dropna(subset=["_start", "_end"]).copy()
 
     detail_rows = []
@@ -160,7 +161,7 @@ def main():
                     "original_annotation_fields_json": json.dumps(
                         {c: (None if pd.isna(row[c]) else str(row[c]))
                          for c in original_cols},
-                        ensure_ascii=False,
+                        ensure_ascii = False,
                     ),
                 })
 
@@ -190,12 +191,12 @@ def main():
                     f"| source CSV row {int(row['_row'])}"
                 )
 
-    OUT.mkdir(parents=True, exist_ok=False)
+    OUT.mkdir(parents = True, exist_ok = False)
     pd.DataFrame(summary_rows).to_csv(
-        OUT / "annotation_window_summary.csv", index=False
+        OUT / "annotation_window_summary.csv", index = False
     )
     pd.DataFrame(detail_rows).to_csv(
-        OUT / "annotation_intervals_detail.csv", index=False
+        OUT / "annotation_intervals_detail.csv", index = False
     )
 
     report = {
@@ -214,8 +215,8 @@ def main():
         ),
     }
     (OUT / "annotation_window_audit.json").write_text(
-        json.dumps(report, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
+        json.dumps(report, indent = 2, ensure_ascii = False) + "\n",
+        encoding = "utf-8",
     )
 
     print("\nAUDIT FILES")

@@ -47,14 +47,14 @@ def parse_args(argv=None):
 
 def fraction_key(fraction: float) -> str:
     if fraction <= 0 or fraction > 1:
-        raise ValueError(f"fraction must be in (0,1], got {fraction}.")
+        raise ValueError(f"fraction must be in (0,1], got {fraction}.")    
     return f"{fraction:.2f}"
 
 
 def extract_backbone_state(checkpoint_path):
     if not checkpoint_path or not os.path.isfile(checkpoint_path):
         raise FileNotFoundError(f"MoCo checkpoint file not found: {checkpoint_path!r}. Run Exp1 first.")
-
+    
     checkpoint = torch.load(checkpoint_path, map_location = "cpu", weights_only = True)
     state_dict = checkpoint.get("model_state", checkpoint)
 
@@ -63,7 +63,7 @@ def extract_backbone_state(checkpoint_path):
 
     if not result:
         raise KeyError(f"No backbone parameters with prefix '{prefix}' found in '{checkpoint_path}'.")
-
+    
     return result
 
 def load_split_manifest(path: Path, dataset: BirdCLEFDataset, seed: int):
@@ -75,16 +75,16 @@ def load_split_manifest(path: Path, dataset: BirdCLEFDataset, seed: int):
 
     if int(data.get("schema_version", -1)) != 5:
         raise ValueError(f"Split manifest '{path}' is from an older preflight/crop protocol.")
-
+    
     if int(data.get("seed", -1)) != seed:
         raise ValueError(f"Split manifest seed mismatch in '{path}'.")
-
+    
     if data.get("label_map") != dataset.label_map:
         raise ValueError("BirdCLEF class map differs from the split manifest. Recreate splits deliberately after checking the data.")
-
-    validate_manifest_file_index(data,
-                                 dataset.relative_paths,
-                                 dataset.labels,
+    
+    validate_manifest_file_index(data, 
+                                 dataset.relative_paths, 
+                                 dataset.labels, 
                                  context = f"Exp2 split {path}")
     return data
 
@@ -92,15 +92,15 @@ def precompute_embeddings(backbone, dataset, indices, device, batch_size, num_wo
     """Cache frozen backbone features once for a linear probe's fixed inputs."""
 
     loader = DataLoader(
-        Subset(dataset, indices),
-        batch_size = batch_size,
+        Subset(dataset, indices), 
+        batch_size = batch_size, 
         shuffle = False,
-        num_workers = num_workers,
+        num_workers = num_workers, 
         pin_memory = device.type == "cuda",
     )
     feature_batches, label_batches = [], []
     backbone.eval()
-
+    
     with torch.no_grad():
         for x, y in loader:
             embeddings = backbone(x.to(device, non_blocking = device.type == "cuda")).cpu()
@@ -109,13 +109,13 @@ def precompute_embeddings(backbone, dataset, indices, device, batch_size, num_wo
 
     if not feature_batches:
         raise RuntimeError("Embedding cache creation processed zero batches.")
-
+    
     features = torch.cat(feature_batches)
     labels = torch.cat(label_batches).long()
 
     if not torch.isfinite(features).all():
         raise FloatingPointError("Frozen backbone produced non finite cached embeddings.")
-
+    
     return features, labels
 
 def main(argv = None):
@@ -123,16 +123,16 @@ def main(argv = None):
 
     if not 0 < args.fraction <= 1:
         raise ValueError("--fraction must be greater than 0 and at most 1.")
-
+    
     if args.mode == "probe" and not args.checkpoint:
         raise ValueError("--checkpoint is required for --mode probe.")
-
+    
     if args.mode in SUPERVISED_MODES and args.variant != args.mode:
         raise ValueError(f"Use --variant {args.mode} when --mode {args.mode}.")
-
+    
     if args.mode == "probe" and args.variant in SUPERVISED_MODES:
         raise ValueError("Supervised variants require their corresponding supervised mode.")
-
+    
     set_seed(args.seed)
     os.makedirs("results", exist_ok = True)
 
@@ -142,7 +142,7 @@ def main(argv = None):
 
     if not os.path.isfile(args.config):
         raise FileNotFoundError(f"Configuration file missing: '{args.config}'.")
-
+    
     with open(args.config, encoding = "utf-8") as stream:
         cfg = yaml.safe_load(stream)
 
@@ -170,7 +170,7 @@ def main(argv = None):
 
     if not math.isfinite(evaluation_minimum_rms) or evaluation_minimum_rms <= 0:
         raise ValueError(f"Split manifest '{manifest_path}' contains an invalid silence_minimum_rms.")
-
+    
     path_to_index = {path: i for i, path in enumerate(index_dataset.relative_paths)}
     fraction = fraction_key(args.fraction)
     fraction_names = manifest["train_fraction_filenames"].get(fraction)
@@ -183,7 +183,7 @@ def main(argv = None):
     test_names = manifest["test_filenames"]
     if not set(fraction_names).issubset(train_names):
         raise ValueError(f"Fraction {fraction} contains paths outside the training split.")
-
+    
     train_indices = [path_to_index[name] for name in fraction_names]
     val_indices = [path_to_index[name] for name in val_names]
     test_indices = [path_to_index[name] for name in test_names]
@@ -193,7 +193,7 @@ def main(argv = None):
     active_label_map = manifest.get("active_label_map", index_dataset.label_map)
     if not active_label_map:
         raise ValueError("Saved split has an empty active_label_map.")
-
+    
     train_noise_pool = None
     train_noise_mixer = None
     train_noise_kwargs = {}
@@ -205,7 +205,7 @@ def main(argv = None):
 
         if not isinstance(snr_range, (list, tuple)) or len(snr_range) != 2:
             raise ValueError("noise_augmentation.snr_db_range must contain [min_db, max_db].")
-
+        
         train_noise_pool = load_seen_habitat_noise_pool(split_csv, esc50_dir, sample_rate, clip_sec)
         train_noise_mixer = NoiseMixer(sample_rate = sample_rate)
 
@@ -222,19 +222,19 @@ def main(argv = None):
         )
 
     train_dataset = ActiveClassDataset(
-        BirdCLEFDataset(data_root,
-                        sample_rate = sample_rate,
-                        duration_sec = clip_sec,
+        BirdCLEFDataset(data_root, 
+                        sample_rate = sample_rate, 
+                        duration_sec = clip_sec, 
                         crop_mode = "random",
-                        minimum_rms = evaluation_minimum_rms,
+                        minimum_rms = evaluation_minimum_rms, 
                         **train_noise_kwargs),
         active_label_map,
     )
 
     eval_dataset = ActiveClassDataset(
-        BirdCLEFDataset(data_root,
-                        sample_rate = sample_rate,
-                        duration_sec = clip_sec,
+        BirdCLEFDataset(data_root, 
+                        sample_rate = sample_rate, 
+                        duration_sec = clip_sec, 
                         crop_mode = "center",
                         minimum_rms = evaluation_minimum_rms),
         active_label_map,
@@ -243,17 +243,17 @@ def main(argv = None):
     output_label_map = train_dataset.active_label_map
     if output_label_map != eval_dataset.active_label_map:
         raise RuntimeError("Train/evaluation active label maps disagree.")
-
+    
     if train_dataset.relative_paths != index_dataset.relative_paths or eval_dataset.label_map != index_dataset.label_map:
         raise RuntimeError("BirdCLEF file order or label map changed between dataset instances.")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
-    logger.info("Mode=%s variant=%s fraction=%s seed=%s device=%s",
+    logger.info("Mode=%s variant=%s fraction=%s seed=%s device=%s", 
                 args.mode, args.variant, fraction, args.seed, device)
-
-    logger.info("Split=%s | train=%d validation=%d test=%d active_classes=%d full_inventory_classes=%d",
-                manifest["split_method"],
+    
+    logger.info("Split=%s | train=%d validation=%d test=%d active_classes=%d full_inventory_classes=%d", 
+                manifest["split_method"], 
                 len(train_indices), len(val_indices), len(test_indices), len(active_label_map), len(index_dataset.label_map))
 
     if manifest.get("grouping_source") == "file_level_no_metadata":
@@ -267,7 +267,7 @@ def main(argv = None):
 
     if loader_kwargs["num_workers"] < 0:
         raise ValueError("num_workers must be non-negative.")
-
+    
     train_loader = DataLoader(Subset(train_dataset, train_indices), shuffle = True, **loader_kwargs)
     val_loader = DataLoader(Subset(eval_dataset, val_indices), shuffle = False, **loader_kwargs)
     test_loader = DataLoader(Subset(eval_dataset, test_indices), shuffle = False, **loader_kwargs)
@@ -299,13 +299,13 @@ def main(argv = None):
     if args.mode == "probe":
         train_x, train_y = precompute_embeddings(backbone, eval_dataset, train_indices, device,
                                                  loader_kwargs["batch_size"], loader_kwargs["num_workers"])
-
+        
         val_x, val_y = precompute_embeddings(backbone, eval_dataset, val_indices, device,
                                              loader_kwargs["batch_size"], loader_kwargs["num_workers"])
-
+        
         test_x, test_y = precompute_embeddings(backbone, eval_dataset, test_indices, device,
                                                loader_kwargs["batch_size"], loader_kwargs["num_workers"])
-
+        
         train_loader = DataLoader(TensorDataset(train_x, train_y), batch_size = loader_kwargs["batch_size"], shuffle = True)
         val_loader = DataLoader(TensorDataset(val_x, val_y), batch_size = loader_kwargs["batch_size"], shuffle = False)
         test_loader = DataLoader(TensorDataset(test_x, test_y), batch_size = loader_kwargs["batch_size"], shuffle = False)
@@ -336,7 +336,7 @@ def main(argv = None):
 
             if not torch.isfinite(loss):
                 raise FloatingPointError(f"Non finite training loss at epoch {epoch}.")
-
+            
             loss.backward()
             optimizer.step()
             train_loss_sum += float(loss.item()) * x.size(0)
@@ -363,26 +363,26 @@ def main(argv = None):
 
         if val_total == 0:
             raise RuntimeError("Validation loop processed zero examples.")
-
+        
         avg_val_loss = val_loss_sum / val_total
         val_acc = val_correct / val_total
         train_loss = train_loss_sum / seen_train
 
-        logger.info("Epoch %d/%d train_loss=%.5f val_loss=%.5f val_acc=%.4f",
+        logger.info("Epoch %d/%d train_loss=%.5f val_loss=%.5f val_acc=%.4f", 
                     epoch, exp_cfg["epochs"], train_loss, avg_val_loss, val_acc)
 
         epoch_record = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(), 
             "mode": args.mode,
-            "variant": args.variant,
-            "seed": args.seed,
+            "variant": args.variant, 
+            "seed": args.seed, 
             "fraction": float(args.fraction),
-            "epoch": epoch,
-            "train_loss": train_loss,
+            "epoch": epoch, 
+            "train_loss": train_loss, 
             "validation_loss": avg_val_loss,
-            "validation_accuracy": val_acc,
+            "validation_accuracy": val_acc, 
             "config_path": args.config,
-            "config_sha256": config_sha256,
+            "config_sha256": config_sha256, 
             "git_commit": git_commit,
             "dataset_fingerprint": manifest["dataset_fingerprint"],
         }
@@ -397,7 +397,7 @@ def main(argv = None):
 
     if best_head_state is None or best_backbone_state is None:
         raise RuntimeError("No best checkpoint was selected; validation did not produce a usable metric.")
-
+    
     head.load_state_dict(best_head_state, strict = True)
 
     if args.mode in SUPERVISED_MODES:
@@ -422,11 +422,11 @@ def main(argv = None):
 
     if test_total == 0:
         raise RuntimeError("Test loop processed zero examples.")
-
+    
     test_acc = test_correct / test_total
     avg_test_loss = test_loss_sum / test_total
 
-    logger.info("FINAL test_loss=%.5f test_acc=%.4f (%d examples)",
+    logger.info("FINAL test_loss=%.5f test_acc=%.4f (%d examples)", 
                 avg_test_loss, test_acc, test_total)
 
     os.makedirs("checkpoints", exist_ok = True)
@@ -436,9 +436,9 @@ def main(argv = None):
     head_path = f"checkpoints/linear_head_{args.variant}_s{args.seed}_frac{fraction_tag}.pt"
     tmp_head_path = head_path + ".tmp"
 
-    torch.save({"model_state": best_head_state,
-                "label_map": output_label_map,
-                "original_active_label_map": active_label_map,
+    torch.save({"model_state": best_head_state, 
+                "label_map": output_label_map, 
+                "original_active_label_map": active_label_map, 
                 "full_label_map": index_dataset.label_map}, tmp_head_path)
     os.replace(tmp_head_path, head_path)
 
@@ -447,9 +447,9 @@ def main(argv = None):
         bb_path = f"checkpoints/{backbone_baseline_name}_s{args.seed}_frac{fraction_tag}.pt"
         tmp_bb_path = bb_path + ".tmp"
 
-        torch.save({"model_state": best_backbone_state,
-                    "label_map": output_label_map,
-                    "original_active_label_map": active_label_map,
+        torch.save({"model_state": best_backbone_state, 
+                    "label_map": output_label_map, 
+                    "original_active_label_map": active_label_map, 
                     "full_label_map": index_dataset.label_map}, tmp_bb_path)
         os.replace(tmp_bb_path, bb_path)
 

@@ -48,7 +48,7 @@ def resolve_annotation_columns(columns) -> dict[str, str]:
                 f"Annotation CSV is missing a recognizable '{field}' column. "
                 f"Available columns: {list(columns)}; accepted names include {list(candidates)}."
             )
-
+        
         resolved[field] = match
 
     return resolved
@@ -78,10 +78,10 @@ def compute_multilabel_ap(targets: np.ndarray, scores: np.ndarray, class_names: 
 
     if targets.ndim != 2 or targets.shape != scores.shape:
         raise ValueError(f"Targets/scores shape mismatch: {targets.shape} vs {scores.shape}.")
-
+    
     if targets.shape[0] < 1 or not np.isfinite(scores).all():
         raise ValueError("Metric inputs are empty or contain non finite scores.")
-
+    
     class_rows = []
     for i, name in enumerate(class_names):
         y = targets[:, i]
@@ -91,17 +91,17 @@ def compute_multilabel_ap(targets: np.ndarray, scores: np.ndarray, class_names: 
         if positives == 0 or negatives == 0:
             continue
 
-        class_rows.append({"species_code": name,
+        class_rows.append({"species_code": name, 
                            "average_precision": float(average_precision_score(y, scores[:, i])),
-                           "positive_segments": positives,
+                           "positive_segments": positives, 
                            "negative_segments": negatives})
     if not class_rows:
         raise ValueError("No class has both positive and negative annotated segments; AP is undefined.")
-
+    
     valid_columns = [i for i in range(targets.shape[1]) if 0 < int(targets[:, i].sum()) < targets.shape[0]]
     if not valid_columns:
         raise ValueError("No class has both positive and negative annotated segments; micro AP is undefined.")
-
+    
     return {
         "macro_average_precision": float(np.mean([row["average_precision"] for row in class_rows])),
         "micro_average_precision": float(average_precision_score(targets[:, valid_columns].reshape(-1), scores[:, valid_columns].reshape(-1))),
@@ -115,7 +115,7 @@ def resolve_audio_files(audio_root: str | Path, annotation_names: set[str]) -> t
     root = Path(audio_root)
     if not root.is_dir():
         raise FileNotFoundError(f"Audio directory does not exist: '{root}'. Extract soundscape_data.zip first.")
-
+    
     by_basename: dict[str, list[Path]] = defaultdict(list)
     by_relative = {}
     for path in sorted(root.rglob("*")):
@@ -138,7 +138,7 @@ def resolve_audio_files(audio_root: str | Path, annotation_names: set[str]) -> t
 
             if len(choices) != 1:
                 raise ValueError(f"Ambiguous audio basename '{Path(normalised).name}' under '{root}'.")
-
+            
             resolved[raw] = choices[0]
         else:
             missing.append(raw)
@@ -150,7 +150,7 @@ def _load_full_mono(path: Path, target_sr: int) -> torch.Tensor:
     waveform, original_sr = torchaudio.load(str(path))
     if waveform.ndim != 2 or waveform.shape[0] < 1 or waveform.shape[-1] < 1:
         raise ValueError(f"Invalid/empty soundscape audio: '{path}'.")
-
+    
     waveform = waveform.to(torch.float32)
     if waveform.shape[0] > 1:
         waveform = waveform.mean(dim = 0, keepdim = True)
@@ -159,7 +159,7 @@ def _load_full_mono(path: Path, target_sr: int) -> torch.Tensor:
 
     if not torch.isfinite(waveform).all():
         raise ValueError(f"Non-finite waveform in '{path}'.")
-
+    
     return waveform.squeeze(0).contiguous()
 
 
@@ -207,16 +207,16 @@ def sample_background_segment_ids(all_annotated_ids: set[int], n_total_segments:
 
     if n_total_segments < 0 or requested < 0:
         raise ValueError("n_total_segments and requested background segment count must be non negative.")
-
+    
     if any(int(segment_id) < 0 or int(segment_id) >= n_total_segments for segment_id in all_annotated_ids):
         raise ValueError("Annotated segment IDs fall outside the recording segment grid.")
-
+    
     candidates = [segment_id for segment_id in range(n_total_segments) if segment_id not in all_annotated_ids]
 
     take = min(int(requested), len(candidates))
     if take == 0:
         return []
-
+    
     digest = hashlib.sha256(f"{int(seed)}:{recording_name}".encode()).digest()
     local_rng = np.random.default_rng(int.from_bytes(digest[:8], "little", signed = False))
 
@@ -228,10 +228,10 @@ def repeat_pad_segment(clip: torch.Tensor, target_samples: int) -> torch.Tensor:
 
     if target_samples < 1:
         raise ValueError("target_samples must be positive.")
-
+    
     if clip.numel() < 1:
         raise ValueError("Cannot repeat pad an empty segment; audio duration/grid alignment is inconsistent.")
-
+    
     if clip.numel() < target_samples:
         repeats = (target_samples + clip.numel() - 1) // clip.numel()
         clip = clip.repeat(repeats)[:target_samples]
@@ -259,7 +259,7 @@ def build_segment_targets(intervals: pd.DataFrame, filename: str, duration_sec: 
             first = max(0, int(start // duration_sec))
             last = max(first, int(np.nextafter(end, -np.inf) // duration_sec))
             segment_ids = range(first, last + 1)
-
+            
         for segment_id in segment_ids:
             seg_start = segment_id * duration_sec
             if seg_start >= recording_duration or seg_start + duration_sec <= start or end < start:
@@ -305,23 +305,23 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not 0 < args.fraction <= 1 or args.sample_rate < 1 or args.clip_sec <= 0 or args.batch_size < 1:
         raise ValueError("fraction, sample rate, clip duration or batch size is invalid.")
-
+    
     if args.background_segments_per_recording < 0:
         raise ValueError("--background-segments-per-recording must be non negative.")
-
+    
     if not 0.0 <= args.min_annotation_coverage <= 1.0:
         raise ValueError("--min-annotation-coverage must be between 0 and 1.")
-
+    
     if args.include_external and "panns" in args.external_models:
         if not args.panns_checkpoint:
             raise ValueError("--panns-checkpoint is required when PANNs is included; use a pre downloaded local file.")
-
+        
         if not Path(args.panns_checkpoint).is_file():
             raise FileNotFoundError(f"PANNs checkpoint does not exist: '{args.panns_checkpoint}'.")
-
+        
     if args.max_recordings is not None and args.max_recordings < 1:
         raise ValueError("--max-recordings must be positive when supplied.")
-
+    
     set_seed(args.seed)
     annotation_path = Path(args.annotation_csv)
     if not annotation_path.is_file():
@@ -334,11 +334,11 @@ def main(argv=None):
     split_path = Path("checkpoints") / f"data_split_s{args.seed}.json"
     if not split_path.is_file():
         raise FileNotFoundError(f"BirdCLEF split manifest '{split_path}' is missing. Run split creation first.")
-
+    
     split = json.loads(split_path.read_text(encoding = "utf-8"))
     if int(split.get("schema_version", -1)) != 5:
         raise ValueError(f"BirdCLEF split '{split_path}' uses an older class-scope/preflight schema.")
-
+    
     active_map = split.get("active_label_map", split.get("label_map", {}))
     full_label_map = split.get("label_map", active_map)
     excluded_classes = split.get("excluded_classes", [])
@@ -347,14 +347,14 @@ def main(argv=None):
     code_to_index = {str(code).strip().lower(): i for i, code in enumerate(ordered_classes)}
     if not code_to_index:
         raise ValueError("Split manifest has no active classes.")
-
+    
     audio_map, missing_recordings = resolve_audio_files(args.audio_dir, set(intervals["filename"].unique()))
     if missing_recordings and not args.allow_missing_recordings:
         raise FileNotFoundError(
             f"The soundscape archive is incomplete: {len(missing_recordings)} annotated recordings are missing under '{args.audio_dir}'. "
             f"Examples: {missing_recordings[:10]}. Re-extract the complete archive or use --allow-missing-recordings for exploratory diagnostics only."
         )
-
+    
     all_annotation_codes = set(intervals["species"].astype(str).str.lower())
     annotation_coverage, mapped_codes, unmapped_codes = calculate_annotation_coverage(
         all_annotation_codes, set(code_to_index)
@@ -366,11 +366,11 @@ def main(argv=None):
             f"is below --min-annotation-coverage = {args.min_annotation_coverage:.1%}. Inspect the class scope/eBird mapping; "
             "lower the gate only with a documented reason."
         )
-
+    
     candidate_names = sorted(set(audio_map))
     if args.max_recordings is not None:
         candidate_names = candidate_names[:args.max_recordings]
-
+        
     if not candidate_names:
         raise ValueError("No annotated audio recordings resolved under --audio-dir.")
 
@@ -391,7 +391,7 @@ def main(argv=None):
 
         if head_payload.get("label_map") != expected_output_map:
             raise ValueError(f"Core head '{head_path}' uses a different active class ordering from the split manifest.")
-
+        
         backbone.eval(); head.eval()
 
     external_models = {}
@@ -401,14 +401,14 @@ def main(argv=None):
         expected_output_map = {name: i for i, name in enumerate(ordered_classes)}
         for external_key in args.external_models:
             head_path = Path("checkpoints") / f"pretrained_head_{external_key}_s{args.seed}_frac{float(args.fraction)}.pt"
-
+            
             if not head_path.is_file():
                 raise FileNotFoundError(f"External head missing: '{head_path}'. Run exp4_pretrained_feature_baselines.py --model {external_key} --seed {args.seed} --fraction {args.fraction} first.")
-
+            
             saved = torch.load(head_path, map_location = "cpu", weights_only = True)
             if saved.get("label_map") != expected_output_map:
                 raise ValueError(f"External head '{head_path}' uses a different active class mapping from the real soundscape evaluation.")
-
+            
             encoder = build_encoder(
                 external_key, device,
                 args.panns_checkpoint if external_key == "panns" else None,
@@ -420,12 +420,12 @@ def main(argv=None):
                     f"External head '{head_path}' was trained with a different/missing model file SHA-256. "
                     "Re-train the head with the currently pinned external model artifact."
                 )
-
+            
             if saved.get("encoder_identity") != encoder.identity:
                 raise ValueError(
                     f"External head '{head_path}' encoder identity does not match the currently loaded model/library."
                 )
-
+            
             ext_head = torch.nn.Linear(int(saved["feature_dim"]), len(ordered_classes)).to(device)
             ext_head.load_state_dict(saved["model_state"], strict = True)
             ext_head.eval()
@@ -464,10 +464,10 @@ def main(argv=None):
             n_total_segments = int(np.ceil(duration / args.clip_sec))
 
             sampled_background_ids = sample_background_segment_ids(
-                all_annotated_ids,
-                n_total_segments,
+                all_annotated_ids, 
+                n_total_segments, 
                 args.background_segments_per_recording,
-                seed = args.background_seed,
+                seed = args.background_seed, 
                 recording_name = annotation_name,
             )
 
@@ -497,7 +497,7 @@ def main(argv=None):
 
                     if not torch.isfinite(logits).all():
                         raise FloatingPointError(f"Non finite logits from '{variant}' on {annotation_name}.")
-
+                    
                     score_rows[variant].append(logits.detach().cpu().numpy().astype(np.float32))
 
                 external_batches_by_rate = {}
@@ -523,7 +523,7 @@ def main(argv=None):
 
                     if not torch.isfinite(logits).all():
                         raise FloatingPointError(f"Non finite logits from external model '{variant}' on {annotation_name}.")
-
+                    
                     score_rows[variant].append(logits.detach().cpu().numpy().astype(np.float32))
 
                 target_batches.extend(ys)
@@ -545,7 +545,7 @@ def main(argv=None):
             "No segments with annotations matching the active BirdCLEF class scope were found. "
             "Check species code compatibility and the active label manifest."
         )
-
+    
     targets = np.stack(target_batches).astype(np.uint8)
     all_scores = {name: np.concatenate(parts, axis = 0) for name, parts in score_rows.items()}
     background_mask = np.asarray(segment_type_rows, dtype = str) == "background"
@@ -578,27 +578,27 @@ def main(argv=None):
             }
 
         metrics[name] = {
-            **model_metrics,
+            **model_metrics, 
             **background_metrics,
-            "n_segments": int(len(targets)),
+            "n_segments": int(len(targets)), 
             "n_recordings": int(len(set(file_rows))),
         }
 
     config_identity = {
         "annotation_csv_sha256": hashlib.sha256(annotation_path.read_bytes()).hexdigest(),
         "recording_names_sha256": hashlib.sha256("\n".join(sorted(candidate_names)).encode()).hexdigest(),
-        "seed": args.seed,
-        "fraction": args.fraction,
+        "seed": args.seed, 
+        "fraction": args.fraction, 
         "sample_rate": args.sample_rate,
         "core_variants": variants,
         "bn_policy": args.bn_policy,
         "view_batch_policy": args.view_batch_policy,
-        "clip_sec": args.clip_sec,
+        "clip_sec": args.clip_sec, 
         "max_recordings": args.max_recordings,
         "background_segments_per_recording": args.background_segments_per_recording,
         "background_seed": args.background_seed,
         "min_annotation_coverage": args.min_annotation_coverage,
-        "include_external": args.include_external,
+        "include_external": args.include_external, 
         "external_models": sorted(external_models),
         "external_encoder_identities": {name: encoder.identity for name, (encoder, _head) in external_models.items()},
         "dataset": "Western Ghats fully annotated soundscapes, Zenodo 10.5281/zenodo.16881041",
@@ -615,13 +615,13 @@ def main(argv=None):
     temp_prediction_path = prediction_path.with_suffix(prediction_path.suffix + ".tmp")
 
     payload = {
-        "targets": targets,
+        "targets": targets, 
         "file_names": np.asarray(file_rows, dtype = str),
         "segment_start_seconds": np.asarray(start_rows, dtype = np.float32),
         "segment_types": np.asarray(segment_type_rows, dtype = str),
         "class_names": np.asarray(ordered_classes, dtype = str),
     }
-
+    
     payload.update({f"scores_{name}": score for name, score in all_scores.items()})
 
     with temp_prediction_path.open("wb") as stream:
@@ -630,32 +630,32 @@ def main(argv=None):
     temp_prediction_path.replace(prediction_path)
 
     summary = {
-        "schema_version": 2,
-        "dataset": config_identity["dataset"],
+        "schema_version": 2, 
+        "dataset": config_identity["dataset"], 
         "dataset_license": "CC BY 4.0; cite the Zenodo dataset record and original paper/documentation.",
-        "seed": args.seed,
-        "fraction": args.fraction,
+        "seed": args.seed, 
+        "fraction": args.fraction, 
         "n_candidate_recordings": len(candidate_names),
-        "n_recordings_evaluated": len(set(file_rows)),
+        "n_recordings_evaluated": len(set(file_rows)), 
         "n_segments_scored": int(len(targets)),
-        "n_annotated_segments": int(annotated_segment_count),
+        "n_annotated_segments": int(annotated_segment_count), 
         "n_background_segments": int(background_segment_count),
         "background_segments_per_recording": args.background_segments_per_recording,
         "n_unique_annotated_species_codes": len(all_annotation_codes),
         "n_species_codes_matched_to_active_classes": len(mapped_codes),
         "annotation_code_coverage_fraction": float(annotation_coverage),
         "minimum_annotation_coverage_required": float(args.min_annotation_coverage),
-        "matched_annotation_codes": sorted(mapped_codes),
+        "matched_annotation_codes": sorted(mapped_codes), 
         "unmapped_species_codes": unmapped_codes,
-        "n_annotation_recordings_missing_audio": len(missing_recordings),
+        "n_annotation_recordings_missing_audio": len(missing_recordings), 
         "missing_recording_names_preview": missing_recordings[:20],
         "incomplete_audio_inventory": bool(missing_recordings),
-        "capped_smoke_run": args.max_recordings is not None,
+        "capped_smoke_run": args.max_recordings is not None, 
         "active_label_map": active_map,
         "full_label_map": full_label_map,
-        "n_active_classes": len(active_map),
+        "n_active_classes": len(active_map), 
         "n_total_classes": len(full_label_map),
-        "n_excluded_classes": len(excluded_classes),
+        "n_excluded_classes": len(excluded_classes), 
         "excluded_classes": excluded_classes,
         "n_silent_files_excluded": int(split.get("n_silent_files_excluded", len(split.get("silent_excluded_filenames", [])))),
         "silent_excluded_filenames": split.get("silent_excluded_filenames", []),
@@ -685,9 +685,9 @@ def main(argv=None):
     temp_result_path.write_text(json.dumps(summary, indent = 2), encoding = "utf-8")
     temp_result_path.replace(result_path)
 
-    print(json.dumps({"summary": str(result_path),
-                      "predictions": str(prediction_path),
-                      "models": {k: {"macro_AP": v["macro_average_precision"],
+    print(json.dumps({"summary": str(result_path), 
+                      "predictions": str(prediction_path), 
+                      "models": {k: {"macro_AP": v["macro_average_precision"], 
                                      "micro_AP": v["micro_average_precision"]} for k, v in metrics.items()}}, indent = 2))
 
 

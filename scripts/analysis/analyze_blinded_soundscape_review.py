@@ -28,17 +28,17 @@ def read_rows(path: Path) -> list[dict[str, str]]:
 
         if reader.fieldnames != EXPECTED_FIELDS:
             raise ValueError(f"Review CSV columns must match the provided template: {EXPECTED_FIELDS}")
-
+        
         return [{key: (value or "").strip() for key, value in row.items()} for row in reader]
 
 
 def validate_review(path: Path, key_path: Path = KEY) -> dict:
     if not path.is_file():
         raise FileNotFoundError(path)
-
+    
     if not key_path.is_file():
         raise FileNotFoundError(f"Private answer key missing: {key_path}")
-
+    
     rows = read_rows(path)
     with key_path.open(newline = "", encoding = "utf-8-sig") as stream:
         key_reader = csv.DictReader(stream)
@@ -49,20 +49,20 @@ def validate_review(path: Path, key_path: Path = KEY) -> dict:
 
     if len(ids) != len(set(ids)):
         raise ValueError("Review CSV contains duplicate clip_id values")
-
+    
     if set(ids) != expected_ids:
         raise ValueError(f"Review CSV must contain all {len(expected_ids)} expected clip IDs exactly once")
-
+    
     allowed_heard = {"", "yes", "no", "uncertain"}
     allowed_confidence = {"", "high", "medium", "low"}
 
     for row in rows:
         if row["bird_vocalization_heard_yes_no_uncertain"].lower() not in allowed_heard:
             raise ValueError(f"Invalid bird-vocalization response for {row['clip_id']}")
-
+        
         if row["confidence_high_medium_low"].lower() not in allowed_confidence:
             raise ValueError(f"Invalid confidence response for {row['clip_id']}")
-
+        
     reviewed = [r for r in rows if r["bird_vocalization_heard_yes_no_uncertain"]]
     complete = len(reviewed) == len(expected_ids)
 
@@ -103,7 +103,7 @@ def main() -> None:
 
     if args.output_json.exists():
         raise FileExistsError(f"Refusing to overwrite {args.output_json}")
-
+    
     result = validate_review(args.review_csv)
     args.output_json.parent.mkdir(parents = True, exist_ok = True)
     args.output_json.write_text(json.dumps(result, indent = 2) + "\n", encoding = "utf-8")

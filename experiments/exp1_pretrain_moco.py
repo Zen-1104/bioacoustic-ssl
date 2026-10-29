@@ -49,7 +49,7 @@ def load_noise_pool(split_csv_path, esc50_audio_dir, sample_rate, duration_sec):
 
     if not split_path.is_file():
         raise FileNotFoundError(f"Habitat split CSV missing: '{split_path}'. Run create_habitat_split.py before training.")
-
+    
     df = read_verified_habitat_csv(
         split_path,
         esc50_audio_dir,
@@ -72,7 +72,7 @@ def load_noise_pool(split_csv_path, esc50_audio_dir, sample_rate, duration_sec):
         raise ValueError(
             f"Habitat noise CSV '{split_path}' has no filename rows."
         )
-
+    
     root = Path(esc50_audio_dir)
     pool = []
 
@@ -82,12 +82,12 @@ def load_noise_pool(split_csv_path, esc50_audio_dir, sample_rate, duration_sec):
 
         if filepath is None:
             raise FileNotFoundError(f"Noise audio '{filename}' not found under '{root}'.")
-
+        
         wave = load_and_preprocess_audio(
-            filepath,
-            target_sr = sample_rate,
+            filepath, 
+            target_sr = sample_rate, 
             duration_sec = duration_sec,
-            crop_mode = "center",
+            crop_mode = "center", 
             short_audio_policy = "repeat",
         )
         pool.append(wave)
@@ -101,21 +101,21 @@ def load_split_for_monitor(path: Path, dataset: BirdCLEFDataset, seed: int):
 
     if not path.is_file():
         raise FileNotFoundError(f"Split manifest '{path}' is required for the knn monitor. Run scripts/data/create_birdclef_splits.py first.")
-
+    
     manifest = json.loads(path.read_text(encoding = "utf-8"))
 
     if int(manifest.get("schema_version", -1)) != 5:
-        raise ValueError(f"knn monitor split '{path}' uses an older crop schema.")
+        raise ValueError(f"knn monitor split '{path}' uses an older crop schema.")   
     if int(manifest.get("seed", -1)) != seed:
-        raise ValueError(f"knn monitor split seed mismatch in '{path}'.")
+        raise ValueError(f"knn monitor split seed mismatch in '{path}'.")   
     if manifest.get("label_map") != dataset.label_map:
         raise ValueError("knn monitor BirdCLEF label map differs from its saved split manifest.")
-
+    
     minimum_rms = float(manifest.get("silence_minimum_rms", DEFAULT_EVALUATION_MINIMUM_RMS))
 
     if not torch.isfinite(torch.tensor(minimum_rms)) or minimum_rms <= 0:
         raise ValueError(f"knn monitor split '{path}' contains an invalid silence_minimum_rms.")
-
+    
     dataset.minimum_rms = minimum_rms
 
     validate_manifest_file_index(manifest, dataset.relative_paths, dataset.labels, context = "knn monitor")
@@ -141,30 +141,30 @@ def main(argv = None):
 
     if not os.path.isfile(args.config):
         raise FileNotFoundError(f"Configuration file missing: '{args.config}'.")
-
+    
     cfg = yaml.safe_load(Path(args.config).read_text(encoding = "utf-8"))
     data_cfg, model_cfg, train_cfg = cfg["dataset"], cfg["model"], cfg["training"]
     deterministic = bool(train_cfg.get("deterministic", False))
     deterministic_warn_only = bool(train_cfg.get("deterministic_warn_only", False))
 
-    set_seed(args.seed,
-             deterministic = deterministic,
+    set_seed(args.seed, 
+             deterministic = deterministic, 
              deterministic_warn_only = deterministic_warn_only)
 
     logger = get_logger(f"pretrain_{args.variant}_{args.seed}")
-    logger.info("deterministic_algorithms=%s deterministic_warn_only=%s (warn-only runs are not strict determinism)",
-                deterministic,
+    logger.info("deterministic_algorithms=%s deterministic_warn_only=%s (warn-only runs are not strict determinism)", 
+                deterministic, 
                 deterministic_warn_only)
     bn_policy = args.bn_policy or model_cfg.get("bn_policy", "copy_query")
 
     if bn_policy not in MoCo_Wrapper.BN_POLICIES:
         raise ValueError(f"Invalid model.bn_policy {bn_policy!r}; expected one of {MoCo_Wrapper.BN_POLICIES}.")
-
+    
     view_batch_policy = args.view_batch_policy or model_cfg.get("view_batch_policy", "separate")
 
     if view_batch_policy not in MoCo_Wrapper.VIEW_BATCH_POLICIES:
         raise ValueError(f"Invalid model.view_batch_policy {view_batch_policy!r}; expected one of {MoCo_Wrapper.VIEW_BATCH_POLICIES}.")
-
+    
     bn_suffix = f"_bn-{bn_policy}" if args.bn_policy is not None else ""
     view_suffix = f"_views-{view_batch_policy}" if args.view_batch_policy is not None else ""
     run_suffix = bn_suffix + view_suffix
@@ -173,7 +173,7 @@ def main(argv = None):
 
     noise_pool = None
     noise_mixer = None
-
+    
     if args.variant == "habitat":
         noise_pool = load_noise_pool(
             split_csv_path = data_cfg.get("seen_habitat_csv", "data/processed/esc50_seen_habitat.csv"),
@@ -188,11 +188,11 @@ def main(argv = None):
     overlap_manifest = data_cfg.get("overlap_exclusions", "data/processed/xeno_canto_excluded.json")
 
     dataset = XenoCantoDataset(
-        audio_dir = data_cfg["xeno_canto_dir"],
+        audio_dir = data_cfg["xeno_canto_dir"], 
         noise_pool = noise_pool,
-        noise_mixer = noise_mixer,
+        noise_mixer = noise_mixer, 
         variant = args.variant,
-        sample_rate = int(data_cfg["sample_rate"]),
+        sample_rate = int(data_cfg["sample_rate"]), 
         duration_sec = float(data_cfg["clip_sec"]),
         exclude_manifest_path = overlap_manifest,
         require_overlap_audit = bool(data_cfg.get("require_overlap_audit", True)),
@@ -207,27 +207,27 @@ def main(argv = None):
 
     if len(dataset) < batch_size:
         raise RuntimeError(f"Only {len(dataset)} eligible XenoCanto files for batch_size = {batch_size}; reduce batch size or add data.")
-
+    
     queue_size = int(model_cfg["queue_size"])
     enqueue_batch_size = 2 * batch_size
 
     if queue_size % enqueue_batch_size != 0:
         raise ValueError(f"queue_size ({queue_size}) must be divisible by 2*batch_size ({enqueue_batch_size}) for symmetric enqueue operations.")
-
+    
     num_workers = int(os.environ.get("BIO_SSL_NUM_WORKERS", train_cfg.get("num_workers", 0)))
 
     if num_workers < 0:
         raise ValueError("num_workers must be non negative.")
-
-    # Restart worker processes at each epoch boundary.
-    loader = DataLoader(dataset,
-                        batch_size = batch_size,
-                        shuffle = True,
-                        drop_last = True,
+    
+    # Restart worker processes at each epoch boundary. 
+    loader = DataLoader(dataset, 
+                        batch_size = batch_size, 
+                        shuffle = True, 
+                        drop_last = True, 
                         num_workers = num_workers,
-                        pin_memory = device.type == "cuda",
+                        pin_memory = device.type == "cuda", 
                         persistent_workers = False)
-
+    
     if len(loader) == 0:
         raise RuntimeError("Pretraining DataLoader has zero batches; refusing to save an empty checkpoint.")
 
@@ -238,7 +238,7 @@ def main(argv = None):
     model = MoCo_Wrapper(backbone_q, backbone_k, head_q, head_k,
                          dim = int(model_cfg["feature_dim"]), K = queue_size,
                          m = float(model_cfg["momentum"]), bn_policy = bn_policy, view_batch_policy = view_batch_policy).to(device)
-
+    
     optimizer = torch.optim.Adam(model.encoder_q.parameters(), lr = float(train_cfg["learning_rate"]))
     epochs = int(train_cfg["epochs"])
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max = max(1, epochs))
@@ -253,15 +253,15 @@ def main(argv = None):
 
     monitor_dataset = BirdCLEFDataset(
         data_cfg.get("birdclef_dir", "data/raw/birdclef"),
-        sample_rate = int(data_cfg["sample_rate"]),
-        duration_sec = float(data_cfg["clip_sec"]),
+        sample_rate = int(data_cfg["sample_rate"]), 
+        duration_sec = float(data_cfg["clip_sec"]), 
         crop_mode = "center",
     )
     audit_data = dataset.overlap_audit
 
     if audit_data is None or not audit_data.get("birdclef_paths_sha256"):
         raise RuntimeError("Overlap audit does not include a BirdCLEF file index. Rerun audit_dataset_overlap.py.")
-
+    
     current_birdclef_path_hash = fingerprint_relative_paths(monitor_dataset.relative_paths)
 
     if current_birdclef_path_hash != audit_data["birdclef_paths_sha256"]:
@@ -269,7 +269,7 @@ def main(argv = None):
             "Current BirdCLEF file index differs from the overlap audit. "
             "Rerun audit_dataset_overlap.py and review the split manifests before pretraining."
         )
-
+    
     if monitor_every > 0:
         monitor = load_split_for_monitor(Path(f"checkpoints/data_split_s{args.seed}.json"), monitor_dataset, args.seed)
 
@@ -286,7 +286,7 @@ def main(argv = None):
     data_fingerprint = fingerprint_relative_paths(dataset.relative_paths)
     preflight_manifest_path = data_cfg.get("preflight_manifest")
     preflight_manifest_sha256 = None
-
+    
     if preflight_manifest_path:
         manifest_file = Path(preflight_manifest_path)
         if manifest_file.is_file():
@@ -297,7 +297,7 @@ def main(argv = None):
     if args.resume:
         if not latest_path.is_file():
             raise FileNotFoundError(f"Cannot resume: latest checkpoint not found at '{latest_path}'.")
-
+        
         resume_payload = torch.load(latest_path, map_location="cpu", weights_only=True)
         expected = {
             "variant": args.variant,
@@ -315,7 +315,7 @@ def main(argv = None):
                     f"Resume checkpoint metadata mismatch for {key}: saved={resume_payload.get(key)!r}, current={value!r}. "
                     "Use the original config/data or deliberately start a new run."
                 )
-
+            
         model.load_state_dict(resume_payload["model_state"], strict=True)
         optimizer.load_state_dict(resume_payload["optimizer_state"])
         scheduler.load_state_dict(resume_payload["scheduler_state"])
@@ -381,7 +381,7 @@ def main(argv = None):
 
             if not torch.isfinite(loss):
                 raise FloatingPointError(f"Non finite symmetric InfoNCE loss at epoch {epoch}, batch {n_batches}.")
-
+            
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.encoder_q.parameters(), max_norm = float(train_cfg.get("grad_clip_norm", 5.0)))
             optimizer.step()
@@ -392,7 +392,7 @@ def main(argv = None):
 
         if n_batches == 0:
             raise RuntimeError(f"Epoch {epoch} contained zero training batches.")
-
+        
         avg_loss = loss_sum / n_batches
         scheduler.step()
 
@@ -416,37 +416,37 @@ def main(argv = None):
 
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "variant": args.variant,
-            "seed": args.seed,
-            "bn_policy": bn_policy,
-            "view_batch_policy": view_batch_policy,
+            "variant": args.variant, 
+            "seed": args.seed, 
+            "bn_policy": bn_policy, 
+            "view_batch_policy": view_batch_policy, 
             "epoch": epoch,
-            "train_infonce_loss": avg_loss,
+            "train_infonce_loss": avg_loss, 
             "knn_probe_accuracy": knn_acc,
-            "learning_rate": scheduler.get_last_lr()[0],
-            "batches": n_batches,
+            "learning_rate": scheduler.get_last_lr()[0], 
+            "batches": n_batches, 
             "examples": n_seen,
-            "config_path": args.config,
-            "config_sha256": config_sha256,
+            "config_path": args.config, 
+            "config_sha256": config_sha256, 
             "git_commit": commit,
         }
 
         payload = {
-            "model_state": model.state_dict(),
+            "model_state": model.state_dict(), 
             "optimizer_state": optimizer.state_dict(),
-            "scheduler_state": scheduler.state_dict(),
+            "scheduler_state": scheduler.state_dict(), 
             "epoch": epoch,
-            "variant": args.variant,
-            "seed": args.seed,
-            "bn_policy": bn_policy,
-            "view_batch_policy": view_batch_policy,
+            "variant": args.variant, 
+            "seed": args.seed, 
+            "bn_policy": bn_policy, 
+            "view_batch_policy": view_batch_policy, 
             "config_path": args.config,
-            "git_commit": commit,
+            "git_commit": commit, 
             "config_sha256": config_sha256,
             "dataset_fingerprint": data_fingerprint,
             "preflight_manifest": data_cfg.get("preflight_manifest"),
             "preflight_manifest_sha256": preflight_manifest_sha256,
-            "train_infonce_loss": avg_loss,
+            "train_infonce_loss": avg_loss, 
             "knn_probe_accuracy": knn_acc,
             "label_map": monitor_dataset.label_map if monitor is not None else None,
             "rng_state": capture_rng_state(),

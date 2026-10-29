@@ -26,20 +26,26 @@ def load_archive(path: Path) -> dict[str, np.ndarray]:
     if not path.is_file():
         raise FileNotFoundError(f"Prediction archive missing: {path}")
 
-    with np.load(path, allow_pickle=False) as archive:
+    with np.load(path, allow_pickle = False) as archive:
         required = (
-            "targets", "file_names", "segment_start_seconds",
-            "segment_types", "class_names",
-            "scores_habitat", "scores_standard",
+            "targets", 
+            "file_names", 
+            "segment_start_seconds",
+            "segment_types", 
+            "class_names",
+            "scores_habitat", 
+            "scores_standard",
         )
+
         missing = set(required).difference(archive.files)
         if missing:
             raise ValueError(f"{path} is missing arrays: {sorted(missing)}")
+        
         return {key: archive[key].copy() for key in required}
 
 
 def make_groups(file_names: np.ndarray):
-    unique_names, inverse = np.unique(file_names, return_inverse=True)
+    unique_names, inverse = np.unique(file_names, return_inverse = True)
     order = np.argsort(inverse, kind="stable")
     counts = np.bincount(inverse)
     offsets = np.concatenate(([0], np.cumsum(counts)))
@@ -58,9 +64,9 @@ def per_class_ap(
     result = average_precision_score(
         targets[:, class_ids],
         scores[:, class_ids],
-        average=None,
+        average = None,
     )
-    return np.asarray(result, dtype=float)
+    return np.asarray(result, dtype = float)
 
 
 def main() -> None:
@@ -76,8 +82,11 @@ def main() -> None:
         item = data[seed]
 
         for key in (
-            "targets", "file_names", "segment_start_seconds",
-            "segment_types", "class_names",
+            "targets", 
+            "file_names", 
+            "segment_start_seconds",
+            "segment_types", 
+            "class_names",
         ):
             if not np.array_equal(reference[key], item[key]):
                 raise ValueError(
@@ -103,10 +112,10 @@ def main() -> None:
     n_recordings = len(groups)
 
     recording_positive = np.zeros(
-        (n_recordings, targets.shape[1]), dtype=bool
+        (n_recordings, targets.shape[1]), dtype = bool
     )
     for i, indices in enumerate(groups):
-        recording_positive[i] = np.any(targets[indices] > 0, axis=0)
+        recording_positive[i] = np.any(targets[indices] > 0, axis = 0)
 
     support = recording_positive.sum(axis=0)
     ids = np.flatnonzero(
@@ -128,11 +137,11 @@ def main() -> None:
     species_names = [str(class_names[i]) for i in ids]
     n_species = len(ids)
 
-    print(f"Recordings: {n_recordings}", flush=True)
-    print(f"Segments: {len(targets)}", flush=True)
+    print(f"Recordings: {n_recordings}", flush = True)
+    print(f"Segments: {len(targets)}", flush = True)
     print(f"Classes included (support >= {THRESHOLD} recordings): {n_species}",
-          flush=True)
-    print("Calculating full-dataset per-species AP...", flush=True)
+          flush = True)
+    print("Calculating full-dataset per-species AP...", flush = True)
 
     point_ap: dict[int, dict[str, np.ndarray]] = {}
     point_delta: dict[int, np.ndarray] = {}
@@ -145,6 +154,7 @@ def main() -> None:
                 data[seed][f"scores_{model}"],
                 ids,
             )
+
         point_delta[seed] = (
             point_ap[seed]["habitat"] - point_ap[seed]["standard"]
         )
@@ -153,23 +163,25 @@ def main() -> None:
             f"Seed {seed}: improved species "
             f"{int(np.sum(point_delta[seed] > 0))}/{n_species}; "
             f"mean per-species delta={np.mean(point_delta[seed]):+.8f}",
-            flush=True,
+            flush = True,
         )
 
     mean_habitat_ap = (
         point_ap[43]["habitat"] + point_ap[44]["habitat"]
     ) / 2.0
+
     mean_standard_ap = (
         point_ap[43]["standard"] + point_ap[44]["standard"]
     ) / 2.0
+
     mean_delta = (point_delta[43] + point_delta[44]) / 2.0
 
     rng = np.random.default_rng(RANDOM_SEED)
     bootstrap_delta = {
-        43: np.empty((N_BOOTSTRAP, n_species), dtype=float),
-        44: np.empty((N_BOOTSTRAP, n_species), dtype=float),
+        43: np.empty((N_BOOTSTRAP, n_species), dtype = float),
+        44: np.empty((N_BOOTSTRAP, n_species), dtype = float),
     }
-    bootstrap_mean = np.empty((N_BOOTSTRAP, n_species), dtype=float)
+    bootstrap_mean = np.empty((N_BOOTSTRAP, n_species), dtype = float)
 
     accepted = 0
     attempts = 0
@@ -179,7 +191,7 @@ def main() -> None:
     print(
         "Starting paired recording bootstrap. Each draw is shared by both "
         "models and both seeds.",
-        flush=True,
+        flush = True,
     )
 
     while accepted < N_BOOTSTRAP:
@@ -190,7 +202,7 @@ def main() -> None:
             )
 
         selected_groups = rng.integers(
-            0, n_recordings, size=n_recordings
+            0, n_recordings, size = n_recordings
         )
         sampled_indices = np.concatenate(
             [groups[i] for i in selected_groups]
@@ -202,8 +214,8 @@ def main() -> None:
         # Reject draws where any selected species has no positive or
         # no negative segment.
         if (
-            not np.all(np.any(selected_targets > 0, axis=0))
-            or not np.all(np.any(selected_targets == 0, axis=0))
+            not np.all(np.any(selected_targets > 0, axis = 0))
+            or not np.all(np.any(selected_targets == 0, axis = 0))
         ):
             continue
 
@@ -214,11 +226,13 @@ def main() -> None:
                 data[seed]["scores_habitat"][sampled_indices],
                 ids,
             )
+
             standard = per_class_ap(
                 sampled_targets,
                 data[seed]["scores_standard"][sampled_indices],
                 ids,
             )
+
             replicate_deltas[seed] = habitat - standard
 
         bootstrap_delta[43][accepted] = replicate_deltas[43]
@@ -233,7 +247,7 @@ def main() -> None:
             print(
                 f"Completed {accepted}/{N_BOOTSTRAP} valid replicates "
                 f"({elapsed:.1f}s elapsed; {attempts} attempts).",
-                flush=True,
+                flush = True,
             )
 
     rows = []
@@ -272,25 +286,30 @@ def main() -> None:
         })
 
     rows.sort(
-        key=lambda row: row["mean_delta_ap_across_seeds"],
-        reverse=True,
+        key = lambda row: row["mean_delta_ap_across_seeds"],
+        reverse = True,
     )
 
     out = OUT
-    out.mkdir(parents=True, exist_ok=False)
+    out.mkdir(parents = True, exist_ok = False)
 
     result_path = out / "per_species_ap_comparison.csv"
-    with result_path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+    with result_path.open("w", newline = "", encoding = "utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames = list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
 
     replicate_path = out / "per_species_bootstrap_replicates.csv"
-    with replicate_path.open("w", newline="", encoding="utf-8") as f:
+    with replicate_path.open("w", newline = "", encoding = "utf-8") as f:
         fields = [
-            "replicate", "species", "positive_recording_support",
-            "delta_seed43", "delta_seed44", "mean_delta_across_seeds",
+            "replicate", 
+            "species", 
+            "positive_recording_support",
+            "delta_seed43", 
+            "delta_seed44", 
+            "mean_delta_across_seeds",
         ]
+
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
         for rep in range(N_BOOTSTRAP):
@@ -307,6 +326,7 @@ def main() -> None:
     positive_deltas = np.maximum(mean_delta, 0.0)
     positive_sum = float(positive_deltas.sum())
     sorted_positive = np.sort(positive_deltas)[::-1]
+
     top3_share = (
         float(sorted_positive[:3].sum() / positive_sum)
         if positive_sum > 0 else None
@@ -361,45 +381,45 @@ def main() -> None:
 
     summary_path = out / "per_species_summary.json"
     summary_path.write_text(
-        json.dumps(summary, indent=2, allow_nan=False) + "\n",
-        encoding="utf-8",
+        json.dumps(summary, indent = 2, allow_nan = False) + "\n",
+        encoding = "utf-8",
     )
 
-    print("\nPER-SPECIES RESULTS SUMMARY", flush=True)
+    print("\nPER-SPECIES RESULTS SUMMARY", flush = True)
     print(
         f"Positive species deltas: {summary['n_improved_mean_across_seeds']}/"
         f"{n_species} on seed-averaged estimates",
-        flush=True,
+        flush = True,
     )
     print(
         f"Improved in both seeds: {summary['n_improved_in_both_seeds']}/"
         f"{n_species}",
-        flush=True,
+        flush = True,
     )
     print(
         f"Mean delta: {summary['mean_species_delta']:+.8f}; "
         f"median delta: {summary['median_species_delta']:+.8f}",
-        flush=True,
+        flush = True,
     )
     print(
         f"Top-3 share of positive species deltas: "
         f"{100 * top3_share:.1f}%" if top3_share is not None
         else "Top-3 share: undefined",
-        flush=True,
+        flush = True,
     )
     print(
         f"Top-5 share of positive species deltas: "
         f"{100 * top5_share:.1f}%" if top5_share is not None
         else "Top-5 share: undefined",
-        flush=True,
+        flush = True,
     )
 
     print(
         "\nRank | Species | Support | Habitat AP | Standard AP | "
         "Delta | Paired 95% CI | Both seeds",
-        flush=True,
+        flush = True,
     )
-    for rank, row in enumerate(rows, start=1):
+    for rank, row in enumerate(rows, start = 1):
         print(
             f"{rank:>2} | {row['species']:<8} | "
             f"{row['positive_recording_support']:>3} | "
@@ -409,13 +429,13 @@ def main() -> None:
             f"[{row['mean_seed_ci95_low']:+.5f}, "
             f"{row['mean_seed_ci95_high']:+.5f}] | "
             f"{'yes' if row['improved_both_seeds'] else 'no'}",
-            flush=True,
+            flush = True,
         )
 
-    print("\nSaved files:", flush=True)
-    print(result_path, flush=True)
-    print(replicate_path, flush=True)
-    print(summary_path, flush=True)
+    print("\nSaved files:", flush = True)
+    print(result_path, flush = True)
+    print(replicate_path, flush = True)
+    print(summary_path, flush = True)
 
 
 if __name__ == "__main__":

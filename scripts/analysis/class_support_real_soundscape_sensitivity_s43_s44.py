@@ -23,19 +23,19 @@ def load_archive(path: Path) -> dict[str, np.ndarray]:
 
     with np.load(path, allow_pickle = False) as data:
         required = (
-            "targets",
-            "file_names",
+            "targets", 
+            "file_names", 
             "segment_start_seconds",
-            "segment_types",
+            "segment_types", 
             "class_names",
-            "scores_habitat",
+            "scores_habitat", 
             "scores_standard",
         )
 
         missing = set(required).difference(data.files)
         if missing:
             raise ValueError(f"{path} is missing arrays: {sorted(missing)}")
-
+        
         return {key: data[key].copy() for key in required}
 
 
@@ -81,10 +81,10 @@ def main():
     for seed in (43, 44):
         item = data[seed]
         for key in (
-            "targets",
-            "file_names",
+            "targets", 
+            "file_names", 
             "segment_start_seconds",
-            "segment_types",
+            "segment_types", 
             "class_names",
         ):
             if not np.array_equal(ref[key], item[key]):
@@ -244,7 +244,7 @@ def main():
         )
         yb = y[sampled_indices]
 
-        # Enforce valid targets for every species in the broadest fixed class set.
+        # Enforce valid targets for every species in the broadest fixed class set. 
         positive_counts = yb[:, base_ids].sum(axis = 0)
         if np.any(positive_counts == 0) or np.any(
             positive_counts == yb.shape[0]
@@ -257,7 +257,7 @@ def main():
 
         for seed in (43, 44):
             seed_scores = {}
-
+            
             for model in MODELS:
                 scores_b = data[seed][f"scores_{model}"][sampled_indices]
                 class_ap = average_precision_score(

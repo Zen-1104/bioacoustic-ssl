@@ -30,19 +30,23 @@ CANDIDATE_TYPES = [
 def rank_key(row, kind):
     delta = float(row["score_delta"])
     habitat = float(row["habitat_score"])
+
     if kind == "positive_target_standard_score_gain":
         return delta
+    
     if kind == "background_target_negative_top_habitat_score":
         return -habitat
+    
     return -delta
 
 def main():
     if not SOURCE.is_file():
         raise FileNotFoundError(f"Candidate manifest not found: {SOURCE}")
+    
     if OUT.exists():
         raise FileExistsError(f"Refusing to overwrite: {OUT}")
 
-    with SOURCE.open(newline="", encoding="utf-8") as f:
+    with SOURCE.open(newline = "", encoding = "utf-8") as f:
         rows = list(csv.DictReader(f))
 
     chosen = []
@@ -68,15 +72,16 @@ def main():
     if not chosen:
         raise RuntimeError("No candidates with resolved audio paths were found.")
 
-    OUT.mkdir(parents=True)
+    OUT.mkdir(parents = True)
     clips_dir = OUT / "clips"
     clips_dir.mkdir()
 
     clip_cache = {}
     manifest_rows = []
 
-    for n, row in enumerate(chosen, start=1):
+    for n, row in enumerate(chosen, start = 1):
         source_path = Path(row["audio_path"])
+
         if not source_path.is_file():
             print(f"SKIP: missing audio file {source_path}")
             continue
@@ -94,6 +99,7 @@ def main():
             with sf.SoundFile(str(source_path)) as audio_file:
                 sr = audio_file.samplerate
                 start_frame = int(round(start_sec * sr))
+
                 if start_frame < 0 or start_frame >= len(audio_file):
                     print(
                         f"SKIP: timestamp {start_sec}s outside {source_path.name}"
@@ -111,7 +117,7 @@ def main():
 
             sf.write(
                 str(clip_path), audio, sr,
-                format="FLAC", subtype="PCM_24",
+                format = "FLAC", subtype = "PCM_24",
             )
             clip_cache[cache_key] = (
                 clip_path.name, sr, audio.shape[1], len(audio) / sr
@@ -139,21 +145,22 @@ def main():
 
     manifest = OUT / "listening_manifest.csv"
     if manifest_rows:
-        with manifest.open("w", newline="", encoding="utf-8") as f:
+        with manifest.open("w", newline = "", encoding = "utf-8") as f:
             writer = csv.DictWriter(
-                f, fieldnames=list(manifest_rows[0].keys())
+                f, fieldnames = list(manifest_rows[0].keys())
             )
             writer.writeheader()
             writer.writerows(manifest_rows)
 
     zip_path = OUT / "species_context_listening_clips.zip"
     with zipfile.ZipFile(
-        zip_path, "w", compression=zipfile.ZIP_DEFLATED
+        zip_path, "w", compression = zipfile.ZIP_DEFLATED
     ) as archive:
-        archive.write(manifest, arcname="listening_manifest.csv")
+        archive.write(manifest, arcname = "listening_manifest.csv")
+
         for clip_path in sorted(clips_dir.glob("*.flac")):
             archive.write(
-                clip_path, arcname=f"clips/{clip_path.name}"
+                clip_path, arcname = f"clips/{clip_path.name}"
             )
 
     print("\nCLIP EXPORT COMPLETE")
@@ -162,6 +169,7 @@ def main():
     print(f"Unique audio clips: {len(list(clips_dir.glob('*.flac')))}")
     print(f"ZIP: {zip_path.resolve()}")
     print(f"Manifest: {manifest.resolve()}")
+    
     if missing:
         print(f"Categories without a resolved candidate: {len(missing)}")
         for item in missing:
