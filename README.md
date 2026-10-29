@@ -56,24 +56,24 @@ Acquire and extract all three datasets before this phase. The recommended full p
 
 ```bash
 mkdir -p logs checkpoints results data/processed data/raw
-python scripts/create_habitat_split.py --seed 42
-python scripts/preflight_xeno_audio.py \
+python scripts/data/create_habitat_split.py --seed 42
+python scripts/preflight/preflight_xeno_audio.py \
   --early-abort-min-files 1000 --early-abort-check-interval 100 \
   --order-seed 42 --staging-stale-hours 72 \
   --audio-dir data/raw/xeno_canto \
   --cache-dir data/processed/xeno_canto_cache \
   --manifest data/processed/xeno_canto_preflight.json \
   --sample-rate 16000 --clip-sec 10 --num-crops 3 --min-rms 0.00001
-python scripts/audit_dataset_overlap.py \
+python scripts/integrity/audit_dataset_overlap.py \
   --xeno-dir data/raw/xeno_canto \
   --birdclef-dir data/raw/birdclef \
   --output data/processed/xeno_canto_excluded.json
-python scripts/preflight_birdclef_audio.py \
+python scripts/preflight/preflight_birdclef_audio.py \
   --audio-dir data/raw/birdclef \
   --output data/processed/birdclef_audio_preflight.json \
   --sample-rate 16000 --clip-sec 10 --minimum-rms 0.00001 \
   --max-read-error-fraction 0.01 --max-excluded-fraction 0.05 --list-read-errors
-python scripts/create_birdclef_splits.py \
+python scripts/data/create_birdclef_splits.py \
   --audio-dir data/raw/birdclef --output-dir checkpoints \
   --seeds 42 123 999 --split-seed 42 \
   --min-recordings 5 --min-groups 5 --rare-class-policy exclude \
@@ -86,7 +86,7 @@ The split builder first scans each BirdCLEF recording once with a deterministic 
 
 The same train/validation/test files are shared across model seeds (`--split-seed 42`), while low-fraction subsets use seed-specific draws for sensitivity. Test recordings remain fixed, so variation across the three seeds mainly reflects model/training randomness; it is not a complete estimate of split uncertainty. Each model seed gets a named manifest and `test_split_s{seed}.json`. Existing manifests are preserved and checked. Use `--overwrite` only when deliberately creating a new benchmark split, and keep the resulting small manifests with the paper artifacts.
 
-The SNR used by `NoiseMixer` is a **clip-global waveform power ratio**, calculated over the whole fixed-length clip and then mixture RMS-renormalized. This can be affected by silence or padding and does not guarantee framewise SNR around a sparse bird call. The default sweep is Clean, +20, +15, +10, +5, 0, and −5 dB. The predeclared primary endpoint is habitat-SSL versus standard-SSL on unseen-habitat noise at 0 dB; the more severe −5 dB condition is secondary. See `docs/REPORTING_AND_ANALYSIS_PLAN_v1.6.4.md`. The manuscript abstract is not part of this repository and must separately be updated to accurately describe the configured sweep and which condition is primary.
+The SNR used by `NoiseMixer` is a **clip-global waveform power ratio**, calculated over the whole fixed-length clip and then mixture RMS-renormalized. This can be affected by silence or padding and does not guarantee framewise SNR around a sparse bird call. The default sweep is Clean, +20, +15, +10, +5, 0, and −5 dB. The predeclared primary endpoint is habitat-SSL versus standard-SSL on unseen-habitat noise at 0 dB; the more severe −5 dB condition is secondary. The manuscript abstract is not part of this repository and must separately be updated to accurately describe the configured sweep and which condition is primary.
 
 ## 5. Run one component manually
 
@@ -208,7 +208,7 @@ Examples (run for all three seeds and all four fractions before reporting aggreg
 ```bash
 # Optional general audio baseline: download checkpoint on an internet-enabled node
 pip install -r requirements.txt
-scripts/download_panns_checkpoint.sh data/pretrained/panns/Cnn14_mAP=0.431.pth
+scripts/maintenance/download_panns_checkpoint.sh data/pretrained/panns/Cnn14_mAP=0.431.pth
 python -m experiments.smoke_external_baselines --model panns --checkpoint data/pretrained/panns/Cnn14_mAP=0.431.pth --num-files 20
 python -m experiments.exp4_pretrained_feature_baselines --model panns --checkpoint data/pretrained/panns/Cnn14_mAP=0.431.pth --seed 42 --fraction 0.10
 
@@ -267,7 +267,7 @@ python experiments/real_soundscape_eval.py --seed 42 --fraction 0.10 --include-e
 The evaluator maps annotated eBird codes to the saved BirdCLEF active class map, reports mapped/unmapped codes, and enforces `--min-annotation-coverage` (default 0.50). It saves macro/micro average precision plus compressed per-segment predictions. In addition to mapped-positive segments, it deterministically samples up to 10 per-recording segments with no annotation interval for any species and gives them all-zero weak-background targets; this improves false-alarm assessment but does not prove species absence. Background top-1 confidence and the fraction above 0.5 are reported per model and summarized across seeds as weak false-alarm proxies; these are not calibrated operating-point false-alarm rates. Core models run on 16 kHz audio and optional external models on their native 32 kHz input; all methods use the same 10-second time segments and repeat-pad the final partial segment. `--max-recordings` exists only for smoke tests; capped runs have unique identities and are excluded by the aggregator. Missing annotated audio aborts by default; `--allow-missing-recordings` is diagnostic-only and its output is rejected by the aggregator. The dataset record states that portions of this collection were used as the hidden BirdCLEF 2024 test set, so do not call it independent of the historical BirdCLEF benchmark. Before evaluation, run the included filename/exact-hash audit against your actual training audio:
 
 ```bash
-python -m scripts.audit_soundscape_overlap \
+python -m scripts.integrity.audit_soundscape_overlap \
   --soundscape-dir data/raw/western_ghats_soundscapes/soundscape_data \
   --training-dirs data/raw/xeno_canto data/raw/birdclef/train_audio
 ```
@@ -294,7 +294,7 @@ The paired analysis saves per-recording correctness, runs exact McNemar comparis
 ## 9. Reliability guards introduced earlier and tightened in v1.6.4
 
 - BirdCLEF evaluation paths share the versioned RMS-aware center-first crop-recovery policy across Exp2, Exp3 clean/noisy conditions, Exp4 primary external baselines, and preflight. Noisy BirdCLEF samples use RMS-aware crop recovery (`SILENT_CROP_RECOVERED`). If every candidate crop is near-silent, the item is retained as clean rather than converted into a noise-only clip with a false bird label; the skip is logged as `SILENT_CROP_MIX_SKIPPED` and recorded in Exp3 JSON. v1.6.4 result aggregation and paired inference fail closed if any skip occurred because clean-fallback rows do not represent the requested noisy SNR. Rebuild the silence preflight/splits and rerun Exp3 rather than interpreting those scores.
-- PANNs requires an explicit `--checkpoint` path. `scripts/download_panns_checkpoint.sh` fetches the pinned Cnn14 artifact on an internet-enabled node and verifies both its official Zenodo MD5 and a separately pinned SHA-256 before promoting the download. Carry the verified file to the compute node and supply the same path to the smoke test and probe commands.
+- PANNs requires an explicit `--checkpoint` path. `scripts/maintenance/download_panns_checkpoint.sh` fetches the pinned Cnn14 artifact on an internet-enabled node and verifies both its official Zenodo MD5 and a separately pinned SHA-256 before promoting the download. Carry the verified file to the compute node and supply the same path to the smoke test and probe commands.
 - BirdNET is pinned to `birdnet[onnx]==1.1.1`. The wrapper refuses unknown API shapes and records library version, model metadata, ONNX path and SHA-256. Store the model cache persistently and verify model terms for the actual artifact.
 - Soundscape analysis adds deterministically sampled weak-background segments, an annotation-code coverage gate, repeat-padding for the last partial segment, and recording-clustered bootstrap intervals. Background segments are weak negatives, not verified silent/absence samples.
 
@@ -321,7 +321,7 @@ Before full training or publishing optional-baseline results, run the real 20-fi
 
 ```bash
 python experiments/smoke_external_baselines.py --model birdnet --num-files 20 --output results/smoke_birdnet.json
-python scripts/download_panns_checkpoint.sh data/pretrained/panns/Cnn14_mAP=0.431.pth
+bash scripts/maintenance/download_panns_checkpoint.sh data/pretrained/panns/Cnn14_mAP=0.431.pth
 python experiments/smoke_external_baselines.py --model panns --checkpoint data/pretrained/panns/Cnn14_mAP=0.431.pth --num-files 20 --output results/smoke_panns.json
 ```
 
@@ -331,11 +331,11 @@ BatchNorm policy is deliberately configurable (`copy_query`, `ema_query`, `froze
 
 ```bash
 sbatch utils/slurm/submit_bn_ablation.slurm
-python scripts/summarize_bn_ablation.py --expected-epochs 100
+python scripts/analysis/summarize_bn_ablation.py --expected-epochs 100
 
 # Separate vs. concatenated query-view forward ablation (3 seeds x 2 policies)
 sbatch utils/slurm/submit_view_batch_ablation.slurm
-python scripts/summarize_view_batch_ablation.py --expected-epochs 100
+python scripts/analysis/summarize_view_batch_ablation.py --expected-epochs 100
 ```
 
 The paired statistics pipeline writes `results/paired_tests_analysis_plan.json`, marks the primary endpoint, estimates its effect over independent training seeds, and applies Holm-Bonferroni correction to the family of secondary per-seed McNemar tests. The default pipeline uses three seeds; if compute allows five for the primary comparison, consistently extend the pretraining, probe, stress, and aggregation job arrays to seeds `42 123 999 2026 2027`. See the analysis-plan document for interpretation and dependence limitations.

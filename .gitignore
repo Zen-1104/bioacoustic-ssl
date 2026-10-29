@@ -1,4 +1,3 @@
-.DS_Store
 __pycache__/
 *.py[cod]
 venv/
@@ -6,30 +5,34 @@ venv/
 .env
 .env.*
 !.env.example
-*.tmp
-*.log
-logs/
-data/raw/
-data/processed/xeno_canto_cache/
-data/pretrained/
-*.wav
-*.mp3
-*.flac
-*.m4a
-*.ogg
-*.opus
-*.onnx
-*.pth
+.DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+ /data/raw/
+ /data/processed/
+ /data/cache/
+ /data/audio/
+ /data/crops/
 *.pt
+*.pth
 *.ckpt
 *.safetensors
-*.zip
-results/*.csv
-results/*.json
-results/*.jsonl
-results/*.png
-results/*.pdf
-results/*.log
+*.bin
+/logs/
+*.log
+*.tmp
+/results/**/*.csv
+/results/**/*.json
+/results/**/*.jsonl
+/results/**/*.png
+/results/**/*.pdf
+/results/**/*.pt
+/results/**/*.pth
+/results/**/*.log
 *.bak
-results/*.pt
-results/*.pth
+*.bak.*
+/archive/backups/**
+!/archive/backups/README.md

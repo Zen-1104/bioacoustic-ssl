@@ -38,9 +38,9 @@ def parse_args(argv = None):
 
 def load_noise_pool_from_csv(split_csv_path, esc50_audio_dir, sample_rate, duration_sec, *, expected_partition: str):
     split_path = Path(split_csv_path)
-    
+
     if not split_path.is_file():
-        raise FileNotFoundError(f"Habitat split CSV missing: '{split_path}'. Run scripts/create_habitat_split.py first.")
+        raise FileNotFoundError(f"Habitat split CSV missing: '{split_path}'. Run scripts/data/create_habitat_split.py first.")
 
     df = read_verified_habitat_csv(
         split_path, esc50_audio_dir, expected_partition=expected_partition
@@ -49,7 +49,7 @@ def load_noise_pool_from_csv(split_csv_path, esc50_audio_dir, sample_rate, durat
     if df.empty:
         raise ValueError(f"Habitat split CSV '{split_path}' has no filenames.")
     root = Path(esc50_audio_dir)
-    
+
     pool = []
 
     for filename in sorted(df["filename"].astype(str).tolist()):
@@ -66,13 +66,13 @@ def load_noise_pool_from_csv(split_csv_path, esc50_audio_dir, sample_rate, durat
 
     if not pool:
         raise RuntimeError(f"No noise data loaded from '{split_path}'.")
-    
+
     return pool
 
 def fraction_tag(fraction: float) -> str:
     if not 0 < fraction <= 1:
         raise ValueError("fraction must be in (0,1].")
-    
+
     return str(float(fraction))
 
 
@@ -84,12 +84,12 @@ def load_model_pair(variant, seed, fraction, num_classes, device):
 
     if not os.path.isfile(head_path):
         raise FileNotFoundError(f"Classifier checkpoint missing: '{head_path}'. Run Exp2 for this variant, seed and fraction.")
-    
+
     head_payload = torch.load(head_path, map_location = "cpu", weights_only = True)
 
     if head_payload.get("label_map") is not None and len(head_payload["label_map"]) != num_classes:
         raise ValueError(f"Class count in '{head_path}' differs from the current dataset.")
-    
+
     head.load_state_dict(head_payload.get("model_state", head_payload), strict = True)
 
     if variant in {"supervised", "supervised_noise"}:
@@ -107,7 +107,7 @@ def load_model_pair(variant, seed, fraction, num_classes, device):
 
         if not os.path.isfile(moco_path):
             raise FileNotFoundError(f"MoCo checkpoint missing: '{moco_path}'. Run Exp1 first.")
-        
+
         moco_payload = torch.load(moco_path, map_location = "cpu", weights_only = True)
         state = moco_payload.get("model_state", {})
         prefix = "encoder_q.0."
@@ -115,7 +115,7 @@ def load_model_pair(variant, seed, fraction, num_classes, device):
 
         if not extracted:
             raise KeyError(f"No backbone state with prefix '{prefix}' in '{moco_path}'.")
-        
+
         backbone.load_state_dict(extracted, strict = True)
 
     backbone.eval()
@@ -126,16 +126,16 @@ def evaluate_all_models_on_loader(models, dataloader, device, group_id_by_file=N
     """Evaluate models on shared batches and preserve stable group IDs for cluster bootstrap."""
 
     state = {
-        variant: {"loss_sum": 0.0, 
-                  "correct": 0, 
-                  "n": 0, 
+        variant: {"loss_sum": 0.0,
+                  "correct": 0,
+                  "n": 0,
                   "predictions": [],
                   "silent_mix_skipped_files": []}
         for variant in models
     }
 
     criterion = torch.nn.CrossEntropyLoss(reduction = "sum")
-    
+
     with torch.inference_mode():
         for batch in dataloader:
             if len(batch) == 4:
@@ -146,7 +146,7 @@ def evaluate_all_models_on_loader(models, dataloader, device, group_id_by_file=N
                 skipped_files = []
             else:
                 raise ValueError(f"Unexpected Exp3 evaluation batch with {len(batch)} fields.")
-            
+
             x = x.to(device, non_blocking = device.type == "cuda")
             y_device = y.to(device, non_blocking = device.type == "cuda")
 
@@ -155,7 +155,7 @@ def evaluate_all_models_on_loader(models, dataloader, device, group_id_by_file=N
 
                 if not torch.isfinite(logits).all():
                     raise FloatingPointError(f"Model '{variant}' produced non finite logits.")
-                
+
                 preds = logits.argmax(dim = 1)
                 item = state[variant]
                 item["silent_mix_skipped_files"].extend(skipped_files)
@@ -165,8 +165,8 @@ def evaluate_all_models_on_loader(models, dataloader, device, group_id_by_file=N
 
                 for filename, actual, guessed in zip(filenames, y.tolist(), preds.cpu().tolist()):
                     row = {
-                        "file": str(filename), 
-                        "y_true": int(actual), 
+                        "file": str(filename),
+                        "y_true": int(actual),
                         "y_pred": int(guessed),
                         "correct": bool(int(actual) == int(guessed)),
                     }
@@ -181,7 +181,7 @@ def evaluate_all_models_on_loader(models, dataloader, device, group_id_by_file=N
     for variant, item in state.items():
         if item["n"] == 0:
             raise RuntimeError(f"No test examples evaluated for model '{variant}'.")
-        
+
         output[variant] = {
             "accuracy": item["correct"] / item["n"],
             "loss": item["loss_sum"] / item["n"],
@@ -212,45 +212,45 @@ def main(argv = None):
     logger.info("seed=%d fraction=%s device=%s", args.seed, args.fraction, device)
 
     base_dataset = BirdCLEFDataset(
-        dataset_cfg["birdclef_dir"], 
-        sample_rate = sample_rate, 
+        dataset_cfg["birdclef_dir"],
+        sample_rate = sample_rate,
         duration_sec = clip_sec,
-        crop_mode="center", 
+        crop_mode="center",
         include_path = True,
     )
 
     manifest_path = Path("checkpoints") / f"data_split_s{args.seed}.json"
     if not manifest_path.is_file():
-        raise FileNotFoundError(f"Split manifest '{manifest_path}' is missing. Run scripts/create_birdclef_splits.py before Exp3.")
-    
+        raise FileNotFoundError(f"Split manifest '{manifest_path}' is missing. Run scripts/data/create_birdclef_splits.py before Exp3.")
+
     split = json.loads(manifest_path.read_text(encoding = "utf-8"))
     if int(split.get("schema_version", -1)) != 5:
         raise ValueError(f"Split manifest '{manifest_path}' uses an older crop/preflight schema.")
-    
+
     if split.get("label_map") != base_dataset.label_map:
         raise ValueError("BirdCLEF label map differs from Exp2's saved split manifest.")
-    
+
     crop_rms_threshold = float(split.get("silence_minimum_rms", DEFAULT_EVALUATION_MINIMUM_RMS))
     if not torch.isfinite(torch.tensor(crop_rms_threshold)) or crop_rms_threshold <= 0:
         raise ValueError(f"Split manifest '{manifest_path}' contains an invalid silence_minimum_rms.")
-    
+
     validate_manifest_file_index(split, base_dataset.relative_paths, base_dataset.labels, context = "Exp3 split")
 
     active_label_map = split.get("active_label_map", base_dataset.label_map)
     if not active_label_map:
         raise ValueError("Saved split has an empty active_label_map.")
-    
+
     output_label_map = ActiveClassDataset(base_dataset, active_label_map).active_label_map
     path_to_index = {name: i for i, name in enumerate(base_dataset.relative_paths)}
 
     test_names = split.get("test_filenames", [])
     if not test_names:
         raise ValueError("Saved test split contains no filenames.")
-    
+
     unknown = sorted(set(test_names) - set(path_to_index))
     if unknown:
         raise ValueError(f"Saved test filenames no longer exist in BirdCLEF: {unknown[:5]}.")
-    
+
     test_indices = [path_to_index[name] for name in test_names]
     test_set = set(test_names)
     if len(test_set) != len(test_names):
@@ -284,7 +284,7 @@ def main(argv = None):
 
     sweep = {
         "metadata": {
-            "schema_version": 5, "seed": args.seed, 
+            "schema_version": 5, "seed": args.seed,
             "fraction": float(args.fraction),
             "dataset_fingerprint": split.get("dataset_fingerprint"),
             "config_sha256": hashlib.sha256(Path(args.config).read_bytes()).hexdigest(),
@@ -327,24 +327,24 @@ def main(argv = None):
 
             # Clean input is identical for the seen and unseen comparisons, so evaluate it once.
             eval_ds = ActiveClassDataset(BirdCLEFDataset(
-                dataset_cfg["birdclef_dir"], 
-                sample_rate = sample_rate, 
+                dataset_cfg["birdclef_dir"],
+                sample_rate = sample_rate,
                 duration_sec = clip_sec,
-                crop_mode = "center", 
-                short_audio_policy = "repeat", 
+                crop_mode = "center",
+                short_audio_policy = "repeat",
                 include_path = True,
-                minimum_rms = crop_rms_threshold, 
+                minimum_rms = crop_rms_threshold,
                 include_mix_status = True,
             ), active_label_map)
 
             if eval_ds.relative_paths != base_dataset.relative_paths or eval_ds.label_map != base_dataset.label_map:
                 raise RuntimeError("Clean evaluation dataset order/labels changed; paired evaluation is invalid.")
-            
+
             loader = DataLoader(
-                Subset(eval_ds, test_indices), 
-                batch_size = int(eval_cfg["batch_size"]), 
+                Subset(eval_ds, test_indices),
+                batch_size = int(eval_cfg["batch_size"]),
                 shuffle = False,
-                num_workers = int(eval_cfg.get("num_workers", 0)), 
+                num_workers = int(eval_cfg.get("num_workers", 0)),
                 pin_memory = device.type == "cuda",
             )
 
@@ -358,27 +358,27 @@ def main(argv = None):
         for pool_name, noise_pool in noise_pools.items():
 
             eval_ds = ActiveClassDataset(BirdCLEFDataset(
-                dataset_cfg["birdclef_dir"], 
-                noise_pool = noise_pool, 
+                dataset_cfg["birdclef_dir"],
+                noise_pool = noise_pool,
                 noise_mixer = noise_mixer,
-                snr_db = float(snr), 
-                sample_rate = sample_rate, 
+                snr_db = float(snr),
+                sample_rate = sample_rate,
                 duration_sec = clip_sec,
-                crop_mode = "center", 
-                short_audio_policy = "repeat", 
+                crop_mode = "center",
+                short_audio_policy = "repeat",
                 include_path = True,
-                minimum_rms = crop_rms_threshold, 
+                minimum_rms = crop_rms_threshold,
                 include_mix_status = True,
             ), active_label_map)
 
             if eval_ds.relative_paths != base_dataset.relative_paths or eval_ds.label_map != base_dataset.label_map:
                 raise RuntimeError("Evaluation dataset order/labels changed; paired evaluation is invalid.")
-            
+
             loader = DataLoader(
-                Subset(eval_ds, test_indices), 
-                batch_size = int(eval_cfg["batch_size"]), 
+                Subset(eval_ds, test_indices),
+                batch_size = int(eval_cfg["batch_size"]),
                 shuffle = False,
-                num_workers = int(eval_cfg.get("num_workers", 0)), 
+                num_workers = int(eval_cfg.get("num_workers", 0)),
                 pin_memory = device.type == "cuda",
             )
 
@@ -386,7 +386,7 @@ def main(argv = None):
             for variant in variants:
                 metric = metrics_by_variant[variant]
                 sweep[pool_name][model_keys[variant]][snr_label] = metric
-                logger.info("pool=%s model=%s SNR=%s acc=%.4f n=%d", 
+                logger.info("pool=%s model=%s SNR=%s acc=%.4f n=%d",
                             pool_name, variant, snr_label, metric["accuracy"], metric["n"])
 
     os.makedirs("results", exist_ok = True)

@@ -37,7 +37,7 @@ def fingerprint_relative_paths(relative_paths: Sequence[str]) -> str:
 def fingerprint_file_inventory(root: str | Path, relative_paths: Sequence[str]) -> str:
     """Fingerprint sorted relative paths, byte sizes, and nanosecond mtimes.
 
-    This cheaply detects inventory changes and ordinary source-file replacements.
+    This cheaply detects inventory changes and ordinary source file replacements.
     It is not a byte-for-byte content digest.    """
 
     base = Path(root).expanduser().resolve()

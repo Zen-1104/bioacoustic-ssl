@@ -18,7 +18,7 @@ HABITAT_ARGS=(--seed 42)
 if [[ "${REBUILD_HABITAT:-0}" == "1" ]]; then
   HABITAT_ARGS+=(--overwrite)
 fi
-python scripts/create_habitat_split.py "${HABITAT_ARGS[@]}"
+python scripts/data/create_habitat_split.py "${HABITAT_ARGS[@]}"
 PREFLIGHT_ARGS=(--audio-dir data/raw/xeno_canto \
   --cache-dir data/processed/xeno_canto_cache \
   --manifest data/processed/xeno_canto_preflight.json \
@@ -31,8 +31,8 @@ PREFLIGHT_ARGS=(--audio-dir data/raw/xeno_canto \
 if [[ "${REBUILD_PREFLIGHT:-0}" == "1" ]]; then
   PREFLIGHT_ARGS+=(--overwrite)
 fi
-python scripts/preflight_xeno_audio.py "${PREFLIGHT_ARGS[@]}"
-python scripts/audit_dataset_overlap.py \
+python scripts/preflight/preflight_xeno_audio.py "${PREFLIGHT_ARGS[@]}"
+python scripts/integrity/audit_dataset_overlap.py \
   --xeno-dir data/raw/xeno_canto \
   --birdclef-dir data/raw/birdclef \
   --output data/processed/xeno_canto_excluded.json
@@ -45,7 +45,7 @@ BIRDCLEF_PREFLIGHT_ARGS=(--audio-dir data/raw/birdclef \
 if [[ "${REBUILD_BIRDCLEF_PREFLIGHT:-0}" == "1" ]]; then
   BIRDCLEF_PREFLIGHT_ARGS+=(--overwrite)
 fi
-python scripts/preflight_birdclef_audio.py "${BIRDCLEF_PREFLIGHT_ARGS[@]}"
+python scripts/preflight/preflight_birdclef_audio.py "${BIRDCLEF_PREFLIGHT_ARGS[@]}"
 
 SPLIT_ARGS=(--audio-dir data/raw/birdclef --output-dir checkpoints --seeds 42 123 999 --split-seed 42 \
   --min-recordings 5 --min-groups 5 --minimum-rms 0.00001 \
@@ -55,4 +55,4 @@ SPLIT_ARGS=(--audio-dir data/raw/birdclef --output-dir checkpoints --seeds 42 12
 if [[ "${REBUILD_SPLITS:-0}" == "1" ]]; then
   SPLIT_ARGS+=(--overwrite)
 fi
-python scripts/create_birdclef_splits.py "${SPLIT_ARGS[@]}"
+python scripts/data/create_birdclef_splits.py "${SPLIT_ARGS[@]}"

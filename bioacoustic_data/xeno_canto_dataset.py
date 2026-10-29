@@ -33,15 +33,16 @@ class XenoCantoDataset(Dataset):
         require_preflight = False,
         max_crop_retries = 5,
         min_crop_rms = 1e-5,
+        crop_pair_policy = "independent_crops",
     ):
         root = Path(audio_dir).expanduser().resolve()
 
         if not root.is_dir():
             raise FileNotFoundError(f"Xeno-Canto directory does not exist: '{root}'.")
-        
+
         if max_crop_retries < 1 or min_crop_rms <= 0:
             raise ValueError("max_crop_retries and min_crop_rms must be positive.")
-        
+
         exclusions: set[str] = set()
         audit_data = None
 
@@ -51,7 +52,7 @@ class XenoCantoDataset(Dataset):
             if not manifest.is_file():
                 if require_overlap_audit:
                     raise FileNotFoundError(
-                        f"Overlap audit manifest '{manifest}' is missing. Run scripts/audit_dataset_overlap.py before pretraining."
+                        f"Overlap audit manifest '{manifest}' is missing. Run scripts/integrity/audit_dataset_overlap.py before pretraining."
                     )
             else:
                 audit_data = json.loads(manifest.read_text(encoding = "utf-8"))
@@ -98,25 +99,26 @@ class XenoCantoDataset(Dataset):
                 if preflight_data.get("schema_version") != 3:
                     raise RuntimeError(
                         "Xeno-Canto preflight manifest schema is outdated; "
-                        "rebuild it with scripts/preflight_xeno_audio.py --overwrite."
+                        "rebuild it with scripts/preflight/preflight_xeno_audio.py --overwrite."
                     )
 
                 if preflight_data.get("audio_inventory_sha256") != current_inventory_hash:
-                    raise RuntimeError("Xeno-Canto source inventory (relative paths, byte sizes, and modification times) "
-                                       "differs from the preflight manifest; rerun preflight."
-                                    )
-                
+                    raise RuntimeError(
+                        "Xeno-Canto source inventory (relative paths, byte sizes, and modification times) "
+                        "differs from the preflight manifest; rerun preflight."
+                    )
+
                 if int(preflight_data.get("sample_rate", -1)) != int(sample_rate):
                     raise RuntimeError("Xeno-Canto cache sample rate differs from the requested sample rate.")
-                
+
                 if abs(float(preflight_data.get("duration_sec", -1)) - float(duration_sec)) > 1e-8:
                     raise RuntimeError("Xeno-Canto cache clip duration differs from the requested duration.")
-                
+
                 cached_records = {str(k): str(v["cache_path"]) for k, v in preflight_data.get("records", {}).items()}
 
                 if not cached_records:
                     raise RuntimeError("Xeno-Canto preflight manifest has no valid cached recordings.")
-                
+
                 if cache_dir is None:
                     raise ValueError("cache_dir must be supplied when using a preflight manifest.")
 
@@ -149,18 +151,25 @@ class XenoCantoDataset(Dataset):
         self.duration_sec = float(duration_sec)
         self.max_crop_retries = int(max_crop_retries)
         self.min_crop_rms = float(min_crop_rms)
+        self.crop_pair_policy = str(crop_pair_policy)
+
+        if self.crop_pair_policy not in {"independent_crops", "same_crop"}:
+            raise ValueError(
+                "crop_pair_policy must be 'independent_crops' or 'same_crop'."
+            )
+
         self.spec_augment = SpecAugment()
         self._crop_retries = 0
 
         if variant not in {"habitat", "standard", "white_noise"}:
             raise ValueError(f"Unknown augmentation variant: {variant!r}.")
-        
+
         if variant == "habitat" and (not noise_pool or noise_mixer is None):
             raise ValueError("Variant 'habitat' requires a non empty seen habitat noise pool and NoiseMixer.")
-        
+
         if variant == "white_noise" and noise_mixer is None:
             raise ValueError("Variant 'white_noise' requires a NoiseMixer.")
-        
+
         if preflight_data is not None and self.cache_dir is None:
             raise ValueError("A cache directory is required for preflight-cached audio.")
 
@@ -173,18 +182,18 @@ class XenoCantoDataset(Dataset):
 
         if not 0.0 <= max_fraction < 0.5:
             raise ValueError("max_fraction must be in [0, 0.5).")
-        
+
         length = waveform.shape[-1]
         max_shift = int(length * max_fraction)
 
         if max_shift < 1:
             return waveform.clone()
-        
+
         shift = int(torch.randint(-max_shift, max_shift + 1, (1,)).item())
 
         if shift == 0:
             return waveform.clone()
-        
+
         result = torch.zeros_like(waveform)
 
         if shift > 0:
@@ -207,10 +216,13 @@ class XenoCantoDataset(Dataset):
 
             if not isinstance(crops, torch.Tensor) or crops.ndim != 3 or crops.shape[1] != 1 or crops.shape[0] < 1:
                 raise ValueError(f"Invalid cached crops in '{cached_path}': expected [N,1,T].")
-            
+
             n_crops = int(crops.shape[0])
 
-            if n_crops >= 2:
+            if self.crop_pair_policy == "same_crop":
+                first_index = int(torch.randint(0, n_crops, (1,)).item())
+                second_index = first_index
+            elif n_crops >= 2:
                 first_index = int(torch.randint(0, n_crops, (1,)).item())
                 second_index = int(torch.randint(0, n_crops - 1, (1,)).item())
 
@@ -224,19 +236,21 @@ class XenoCantoDataset(Dataset):
             for waveform in pair:
                 if not torch.isfinite(waveform).all() or float(waveform.square().mean().sqrt()) < self.min_crop_rms:
                     raise ValueError(f"Cached crop for '{rel}' is silent or invalid; rerun the audio preflight.")
-                
+
             return pair
 
         pair = []
-        for attempt_idx in range(2):
+        crops_to_load = 1 if self.crop_pair_policy == "same_crop" else 2
+
+        for attempt_idx in range(crops_to_load):
             waveform = None
 
             for attempt in range(self.max_crop_retries):
                 candidate = load_and_preprocess_audio(
-                    self.file_list[idx], 
-                    self.sample_rate, 
+                    self.file_list[idx],
+                    self.sample_rate,
                     self.duration_sec,
-                    crop_mode = "random", 
+                    crop_mode = "random",
                     short_audio_policy = "repeat",
                 )
 
@@ -255,6 +269,9 @@ class XenoCantoDataset(Dataset):
                     f"{self.max_crop_retries} attempts. Run preflight_xeno_audio.py and inspect the excluded recordings report."
                 )
             pair.append(waveform)
+
+        if self.crop_pair_policy == "same_crop":
+            return pair[0], pair[0].clone()
 
         return pair[0], pair[1]
 
@@ -280,4 +297,4 @@ class XenoCantoDataset(Dataset):
         view1_mel = self.spec_augment(log_mel_spectrogram(view1_wave, sample_rate = self.sample_rate))
         view2_mel = self.spec_augment(log_mel_spectrogram(view2_wave, sample_rate = self.sample_rate))
 
-        return view1_mel.squeeze(0), view2_mel.squeeze(0) 
+        return view1_mel.squeeze(0), view2_mel.squeeze(0)

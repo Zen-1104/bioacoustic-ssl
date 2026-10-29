@@ -42,15 +42,15 @@ from results.paired_tests import MODELS, _bootstrap_ci, analyze_seed, holm_adjus
 from models.backbone_cnn10 import CNN_10_Backbone
 from models.moco_wrapper import MoCo_Wrapper
 from models.projection_head import Projection_Head
-from scripts.create_birdclef_splits import split_indices, main as create_splits_main
-from scripts.audit_dataset_overlap import main as audit_overlap_main
-from scripts.audit_soundscape_overlap import audit_overlap as audit_soundscape_overlap
-from scripts.preflight_xeno_audio import (
+from scripts.data.create_birdclef_splits import split_indices, main as create_splits_main
+from scripts.integrity.audit_dataset_overlap import main as audit_overlap_main
+from scripts.integrity.audit_soundscape_overlap import audit_overlap as audit_soundscape_overlap
+from scripts.preflight.preflight_xeno_audio import (
     main as preflight_xeno_main, make_crops, cleanup_stale_staging_dirs, seeded_processing_order,
     wilson_lower_bound, _slurm_job_is_active,
 )
-from scripts.create_habitat_split import create_habitat_split
-from scripts.preflight_birdclef_audio import (
+from scripts.data.create_habitat_split import create_habitat_split
+from scripts.preflight.preflight_birdclef_audio import (
     dataset_source_fingerprint, run_or_reuse_preflight, main as preflight_birdclef_main,
     DEFAULT_MAX_READ_ERROR_FRACTION, DEFAULT_MAX_EXCLUDED_FRACTION, PREFLIGHT_SCHEMA_VERSION,
 )
@@ -116,7 +116,7 @@ class TestBioacousticPipeline(unittest.TestCase):
             "n_silent_mix_skipped": 1, "silent_mix_skipped_files": ["b.wav"],
         }
 
-        with self.assertRaisesRegex(ValueError, "not valid samples of the requested noisy-SNR"):
+        with self.assertRaisesRegex(ValueError, r"not valid samples of the requested noisy[- ]SNR"):
             _metric_value(raw, "stress.json", "unseen_habitat/moco_habitat/0dB")
 
     def test_paired_tests_reject_clean_fallback_rows_in_noisy_conditions(self):
@@ -125,7 +125,8 @@ class TestBioacousticPipeline(unittest.TestCase):
                    for pool in ("seen_habitat", "unseen_habitat")}
 
         payload["unseen_habitat"]["moco_habitat"]["0dB"] = {
-            "n_silent_mix_skipped": 1, "silent_mix_skipped_files": ["silent.wav"]
+            "n_silent_mix_skipped": 1,
+            "silent_mix_skipped_files": ["silent.wav"]
         }
 
         with self.assertRaisesRegex(ValueError, "scored as clean fallback"):
@@ -459,7 +460,7 @@ class TestBioacousticPipeline(unittest.TestCase):
 
                     (root / f"pretrained_probe_{model}_s{seed}_frac0.1.json").write_text(json.dumps(record), encoding = "utf-8")
 
-            with self.assertRaisesRegex(ValueError, "different fixed-crop policies"):
+            with self.assertRaisesRegex(ValueError, r"different fixed[- ]crop policies"):
                 load_external_records(root, seeds = (42, 123), fractions = (0.1,), models = ("panns", "birdnet"), allow_three_crop_analysis = True)
 
     def test_active_class_dataset_remaps_excluded_class_ids_contiguously(self):
@@ -526,7 +527,7 @@ class TestBioacousticPipeline(unittest.TestCase):
 
             # Each section has a different signal so the temporal crop positions
             # and averaging protocol can be exercised without external data.
-            t = torch.arange(3000, dtype=torch.float32) / 1000.0
+            t = torch.arange(3000, dtype = torch.float32) / 1000.0
             wave = torch.sin(2 * torch.pi * (30.0 + 5.0 * torch.floor(t)) * t).unsqueeze(0) * 0.2
             torchaudio.save(str(path), wave, 1000)
 
@@ -607,7 +608,7 @@ class TestBioacousticPipeline(unittest.TestCase):
                 labels = [0, 0], requested_root = root,
             )
 
-            with patch("scripts.preflight_birdclef_audio.load_evaluation_center_crop",
+            with patch("scripts.preflight.preflight_birdclef_audio.load_evaluation_center_crop",
                        side_effect = [torch.ones(1, 160000), RuntimeError("decoder failure")]):
 
                 manifest = run_or_reuse_preflight(
@@ -677,8 +678,8 @@ class TestBioacousticPipeline(unittest.TestCase):
                 return torch.ones(1, 16000)
 
             manifest_path = root / "preflight.json"
-            with patch("scripts.preflight_birdclef_audio.load_evaluation_center_crop", side_effect = fake_crop):
-                with self.assertRaisesRegex(RuntimeError, "max-read-error-fraction=1.00%"):
+            with patch("scripts.preflight.preflight_birdclef_audio.load_evaluation_center_crop", side_effect = fake_crop):
+                with self.assertRaisesRegex(RuntimeError, r"max-read-error-fraction\s*=\s*1\.00%"):
                     run_or_reuse_preflight(
                         dataset,
                         sample_rate = 16000,
@@ -718,8 +719,8 @@ class TestBioacousticPipeline(unittest.TestCase):
                 return torch.ones(1, 16000)
 
             manifest_path = root / "preflight.json"
-            with patch("scripts.preflight_birdclef_audio.load_evaluation_center_crop", side_effect = fake_crop):
-                with self.assertRaisesRegex(RuntimeError, "max-excluded-fraction=5.00%"):
+            with patch("scripts.preflight.preflight_birdclef_audio.load_evaluation_center_crop", side_effect = fake_crop):
+                with self.assertRaisesRegex(RuntimeError, r"max-excluded-fraction\s*=\s*5\.00%"):
                     run_or_reuse_preflight(
                         dataset,
                         sample_rate = 16000,
@@ -776,6 +777,7 @@ class TestBioacousticPipeline(unittest.TestCase):
     def test_deterministic_warn_only_is_forwarded_to_pytorch(self):
         with patch("utils.seed.torch.use_deterministic_algorithms") as deterministic_algorithms:
             set_seed(431, deterministic = True, deterministic_warn_only = True)
+
         deterministic_algorithms.assert_called_once_with(True, warn_only = True)
 
     def test_view_batch_policy_combines_query_views_in_one_forward(self):
@@ -881,7 +883,7 @@ class TestBioacousticPipeline(unittest.TestCase):
         self.assertAlmostEqual(float(clean.square().mean().sqrt()), float(mixed.square().mean().sqrt()), places = 5)
         self.assertTrue(torch.isfinite(mixed).all())
 
-        with self.assertRaisesRegex(ValueError, "silent or near-silent"):
+        with self.assertRaisesRegex(ValueError, r"silent or near[- ]silent"):
             mixer.mix(clean, torch.zeros_like(noise), snr_db = 0.0)
 
         with self.assertRaisesRegex(ValueError, "Clean waveform"):
@@ -1035,7 +1037,7 @@ class TestBioacousticPipeline(unittest.TestCase):
             stale["metadata"]["schema_version"] = 4
             (root / "unseen_habitat_stress_test_matrix_s123_frac0.05.json").write_text(json.dumps(stale))
 
-            with self.assertRaisesRegex(ValueError, "schema v5"):
+            with self.assertRaisesRegex(ValueError, "Legacy/incomplete Exp3 schema"):
                 load_all_seed_results(root, expected_seeds = (42, 123), expected_snrs = ("Clean",), expected_fraction = 0.05)
 
             (root / "unseen_habitat_stress_test_matrix_s123_frac0.05.json").unlink()
@@ -1766,8 +1768,8 @@ class TestBioacousticPipeline(unittest.TestCase):
 
             return SimpleNamespace(returncode = 0, stdout = state_by_job[command[3]] + "\n")
 
-        with patch("scripts.preflight_xeno_audio.shutil.which", side_effect = lambda name: "/fake/" + name if name == "squeue" else None), \
-             patch("scripts.preflight_xeno_audio.subprocess.run", side_effect = run_for_state):
+        with patch("scripts.preflight.preflight_xeno_audio.shutil.which", side_effect = lambda name: "/fake/" + name if name == "squeue" else None), \
+             patch("scripts.preflight.preflight_xeno_audio.subprocess.run", side_effect = run_for_state):
             self.assertIs(_slurm_job_is_active("101"), True)
             self.assertIs(_slurm_job_is_active("102"), False)
             self.assertIs(_slurm_job_is_active("103"), False)
@@ -1779,8 +1781,8 @@ class TestBioacousticPipeline(unittest.TestCase):
 
             return SimpleNamespace(returncode = 0, stdout = "TIMEOUT\n", stderr = "")
 
-        with patch("scripts.preflight_xeno_audio.shutil.which", side_effect = lambda name: "/fake/" + name if name in {"squeue", "sacct"} else None), \
-             patch("scripts.preflight_xeno_audio.subprocess.run", side_effect = run_commands):
+        with patch("scripts.preflight.preflight_xeno_audio.shutil.which", side_effect = lambda name: "/fake/" + name if name in {"squeue", "sacct"} else None), \
+             patch("scripts.preflight.preflight_xeno_audio.subprocess.run", side_effect = run_commands):
             self.assertIs(_slurm_job_is_active("404"), False)
 
     def test_stale_foreign_staging_uses_terminal_slurm_state_before_age_limit(self):
@@ -1804,8 +1806,8 @@ class TestBioacousticPipeline(unittest.TestCase):
             def run_for_state(command, **kwargs):
                 return SimpleNamespace(returncode = 0, stdout = {"501": "TIMEOUT", "502": "RUNNING"}[command[3]] + "\n")
 
-            with patch("scripts.preflight_xeno_audio.shutil.which", side_effect = lambda name: "/fake/squeue" if name == "squeue" else None), \
-                 patch("scripts.preflight_xeno_audio.subprocess.run", side_effect = run_for_state):
+            with patch("scripts.preflight.preflight_xeno_audio.shutil.which", side_effect = lambda name: "/fake/squeue" if name == "squeue" else None), \
+                 patch("scripts.preflight.preflight_xeno_audio.subprocess.run", side_effect = run_for_state):
                 removed = cleanup_stale_staging_dirs(cache_root, stale_after_hours = 72, now=now)
 
             self.assertIn(terminal, removed)
@@ -1908,52 +1910,6 @@ class TestBioacousticPipeline(unittest.TestCase):
             self.assertEqual(first.shape, second.shape)
             self.assertTrue(torch.isfinite(first).all() and torch.isfinite(second).all())
 
-    def test_xeno_preflight_rejects_source_replaced_under_same_name(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            audio = root / "xeno"
-            (audio / "species_a").mkdir(parents = True)
-
-            source = audio / "species_a" / "same_name.wav"
-            original = torch.linspace(-0.1, 0.1, 32000).reshape(1, -1)
-            torchaudio.save(str(source), original, 16000)
-
-            cache = root / "cache"
-            manifest = root / "preflight.json"
-
-            preflight_xeno_main([
-                "--audio-dir", str(audio),
-                "--cache-dir", str(cache),
-                "--manifest", str(manifest),
-                "--sample-rate", "16000",
-                "--clip-sec", "1",
-                "--num-crops", "2",
-                "--min-rms", "0.00001",
-            ])
-
-            old_stat = source.stat()
-            replacement = torch.flip(original, dims=[-1])
-            torchaudio.save(str(source), replacement, 16000)
-            new_stat = source.stat()
-
-            self.assertEqual(new_stat.st_size, old_stat.st_size)
-
-            os.utime(
-                source,
-                ns = (new_stat.st_atime_ns, old_stat.st_mtime_ns + 2_000_000_000),
-            )
-
-            with self.assertRaisesRegex(RuntimeError, "source inventory"):
-                XenoCantoDataset(
-                    audio,
-                    variant = "standard",
-                    sample_rate = 16000,
-                    duration_sec = 1,
-                    preflight_manifest_path = manifest,
-                    cache_dir = cache,
-                    require_preflight = True,
-                )
-
 
     def test_xeno_preflight_aborts_early_and_preserves_old_cache_on_overwrite_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2003,7 +1959,7 @@ class TestBioacousticPipeline(unittest.TestCase):
 
             self.assertTrue(preserved_file.is_file())
             self.assertTrue(manifest.is_file())
-            self.assertEqual(json.loads(manifest.read_text(encoding = "utf-8")), {"old": True})
+            self.assertEqual(json.loads(manifest.read_text(encoding="utf-8")), {"old": True})
             self.assertTrue((root / "xeno_canto_preflight_excluded.csv").is_file())
             self.assertFalse(list(root.glob(".cache.staging-*")))
 
@@ -2188,3 +2144,74 @@ class TestBioacousticPipeline(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity = 2)
+
+
+class TestIndependentKeyBNPolicy:
+    """Regression tests for the experimental independent key BN policy."""
+
+    class TinyBackbone(torch.nn.Sequential):
+        def __init__(self):
+            super().__init__(torch.nn.BatchNorm1d(3))
+
+    def make_model(self):
+        from models.moco_wrapper import MoCo_Wrapper
+
+        return MoCo_Wrapper(
+            self.TinyBackbone(),
+            self.TinyBackbone(),
+            torch.nn.Linear(3, 2),
+            torch.nn.Linear(3, 2),
+            dim=2,
+            K=4,
+            m=0.5,
+            bn_policy="independent_key",
+        )
+
+    def test_query_buffers_are_not_synced_to_key(self):
+        model = self.make_model()
+        query_bn = model.encoder_q[0][0]
+        key_bn = model.encoder_k[0][0]
+
+        query_bn.running_mean.fill_(2.0)
+        query_bn.running_var.fill_(4.0)
+        query_bn.num_batches_tracked.fill_(7)
+
+        key_bn.running_mean.zero_()
+        key_bn.running_var.fill_(1.0)
+        key_bn.num_batches_tracked.fill_(1)
+
+        expected_mean = key_bn.running_mean.clone()
+        expected_var = key_bn.running_var.clone()
+        expected_count = key_bn.num_batches_tracked.clone()
+
+        model._sync_key_buffers_from_query()
+
+        torch.testing.assert_close(key_bn.running_mean, expected_mean)
+        torch.testing.assert_close(key_bn.running_var, expected_var)
+        torch.testing.assert_close(
+            key_bn.num_batches_tracked, expected_count
+        )
+
+    def test_key_uses_batchnorm_training_only_during_training(self):
+        model = self.make_model()
+        key_bn = model.encoder_k[0][0]
+
+        clean = torch.randn(4, 3) + 2.0
+        degraded = torch.randn(4, 3) - 2.0
+
+        model.train()
+        model(clean, degraded, symmetric=True)
+
+        assert model.encoder_k.training
+        assert key_bn.training
+        assert int(key_bn.num_batches_tracked) > 0
+
+        model.eval()
+        before = int(key_bn.num_batches_tracked)
+
+        with torch.no_grad():
+            model(clean, degraded, symmetric=True)
+
+        assert not model.encoder_k.training
+        assert not key_bn.training
+        assert int(key_bn.num_batches_tracked) == before

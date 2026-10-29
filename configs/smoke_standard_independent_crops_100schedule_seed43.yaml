@@ -1,0 +1,38 @@
+dataset:
+  sample_rate: 16000
+  clip_sec: 10
+  xeno_canto_dir: data/raw/xeno_canto
+  preflight_manifest: data/processed/xeno_canto_preflight.json
+  cache_dir: data/processed/xeno_canto_cache
+  require_audio_preflight: true
+  min_crop_rms: 1.0e-05
+  max_crop_retries: 5
+  birdclef_dir: data/raw/birdclef
+  overlap_exclusions: data/processed/xeno_canto_excluded.json
+  require_overlap_audit: true
+  crop_pair_policy: independent_crops
+model:
+  bn_policy: copy_query
+  view_batch_policy: separate
+  feature_dim: 128
+  queue_size: 8192
+  momentum: 0.999
+  temperature: 0.1
+training:
+  batch_size: 32
+  learning_rate: 0.0003
+  epochs: 100
+  tau: 0.1
+  num_workers: 4
+  grad_clip_norm: 5.0
+  seed: 43
+  deterministic: true
+  deterministic_warn_only: true
+  augmentation: independent mild waveform time shift plus SpecAugment
+  knn_monitor:
+    every_epochs: 1
+    train_max: 1000
+    validation_max: 500
+    k: 5
+    batch_size: 64
+    num_workers: 2

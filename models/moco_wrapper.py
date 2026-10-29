@@ -7,21 +7,21 @@ import torch.nn.functional as F
 
 
 class MoCo_Wrapper(nn.Module):
-    BN_POLICIES = ("copy_query", "ema_query", "frozen_key")
+    BN_POLICIES = ("copy_query", "ema_query", "frozen_key", "independent_key")
     VIEW_BATCH_POLICIES = ("separate", "concatenated")
 
-    def __init__(self, backbone_q, backbone_k, head_q, head_k, 
-                 dim = 128, K = 8192, m = 0.999, 
+    def __init__(self, backbone_q, backbone_k, head_q, head_k,
+                 dim = 128, K = 8192, m = 0.999,
                  bn_policy = "copy_query", view_batch_policy = "separate"):
-        
+
         super().__init__()
 
         if bn_policy not in self.BN_POLICIES:
             raise ValueError(f"bn_policy must be one of {self.BN_POLICIES}; got {bn_policy!r}.")
-        
+
         if view_batch_policy not in self.VIEW_BATCH_POLICIES:
             raise ValueError(f"view_batch_policy must be one of {self.VIEW_BATCH_POLICIES}; got {view_batch_policy!r}.")
-        
+
         self.bn_policy = bn_policy
         self.view_batch_policy = view_batch_policy
 
@@ -49,27 +49,27 @@ class MoCo_Wrapper(nn.Module):
 
         if query_parameters.keys() != key_parameters.keys():
             raise RuntimeError("Query/key encoder parameter structures differ.")
-        
+
         for name, param_k in key_parameters.items():
             param_k.mul_(self.m).add_(query_parameters[name], alpha = 1.0 - self.m)
 
     @torch.no_grad()
     def _sync_key_buffers_from_query(self):
-        if self.bn_policy == "frozen_key":
+        if self.bn_policy in ("frozen_key", "independent_key"):
             return
-        
+
         query_buffers = dict(self.encoder_q.named_buffers())
 
         key_buffers = dict(self.encoder_k.named_buffers())
         if query_buffers.keys() != key_buffers.keys():
             raise RuntimeError("Query/key encoder buffer structures differ.")
-        
+
         for name, buffer_k in key_buffers.items():
             buffer_q = query_buffers[name]
 
             if buffer_k.shape != buffer_q.shape:
                 raise RuntimeError(f"Query/key buffer shape mismatch for {name!r}.")
-            
+
             if self.bn_policy == "copy_query" or not buffer_k.is_floating_point():
                 buffer_k.copy_(buffer_q)
             else:
@@ -79,17 +79,17 @@ class MoCo_Wrapper(nn.Module):
     def _dequeue_and_enqueue(self, keys):
         if keys.ndim != 2 or keys.shape[1] != self.queue.shape[0]:
             raise ValueError(f"Expected key embeddings [B,{self.queue.shape[0]}], got {tuple(keys.shape)}.")
-        
+
         batch_size = int(keys.shape[0])
         if batch_size < 1 or batch_size > self.K:
             raise ValueError(f"Enqueue batch size must be between 1 and queue size {self.K}; got {batch_size}.")
-        
+
         if self.K % batch_size != 0:
             raise ValueError(f"Queue size {self.K} must be divisible by enqueue batch size {batch_size}; use drop_last = True and a compatible queue size.")
-        
+
         if not torch.isfinite(keys).all():
             raise FloatingPointError("Cannot enqueue non finite key embeddings.")
-        
+
         keys = F.normalize(keys.detach(), dim=1)
         ptr = int(self.queue_ptr.item())
         self.queue[:, ptr:ptr + batch_size] = keys.T
@@ -98,7 +98,10 @@ class MoCo_Wrapper(nn.Module):
     def forward(self, im_q, im_k, *, symmetric: bool = False):
         with torch.no_grad():
             self._momentum_update_key_encoder()
-            self.encoder_k.eval()
+            if self.bn_policy == "independent_key":
+                self.encoder_k.train(self.training)
+            else:
+                self.encoder_k.eval()
 
         if symmetric and self.view_batch_policy == "concatenated":
             query_outputs = self.encoder_q(torch.cat((im_q, im_k), dim = 0))
